@@ -1,6 +1,7 @@
 // server/controllers/admin/userController.js
 const User = require("../../models/User");
 const Order = require("../../models/Order");
+const { REVENUE_ORDER_STATUSES } = require("../../lib/orderLifecycle");
 
 /**
  * GET /api/admin/users
@@ -44,7 +45,12 @@ exports.getAllUsers = async (req, res) => {
     // Get order count for each user
     const userIds = users.map((u) => u._id);
     const orderCounts = await Order.aggregate([
-      { $match: { user: { $in: userIds } } },
+      {
+        $match: {
+          user: { $in: userIds },
+          status: { $in: REVENUE_ORDER_STATUSES },
+        },
+      },
       {
         $group: { _id: "$user", count: { $sum: 1 }, total: { $sum: "$total" } },
       },
@@ -85,7 +91,10 @@ exports.getUserDetails = async (req, res) => {
     }
 
     // Get user's orders
-    const orders = await Order.find({ user: req.params.id })
+    const orders = await Order.find({
+      user: req.params.id,
+      status: { $in: REVENUE_ORDER_STATUSES },
+    })
       .select("_id total status createdAt")
       .sort({ createdAt: -1 })
       .lean();
@@ -182,6 +191,7 @@ exports.deleteUser = async (req, res) => {
 exports.getCustomerSegments = async (req, res) => {
   try {
     const segments = await Order.aggregate([
+      { $match: { status: { $in: REVENUE_ORDER_STATUSES } } },
       {
         $group: {
           _id: "$user",

@@ -30,13 +30,30 @@ const ShippingAddressSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const StatusHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["pending", "paid", "shipped", "delivered", "cancelled"],
+      required: true,
+    },
+    actor: { type: String, enum: ["customer", "payment", "admin", "system"], required: true },
+    note: { type: String, maxlength: 500 },
+    at: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
+
 const OrderSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     stripeSessionId: { type: String, unique: true, sparse: true },
+    checkoutKey: { type: String, maxlength: 160 },
+    checkoutUrl: String,
     items: { type: [OrderItemSchema], required: true },
     shippingAddress: ShippingAddressSchema,
     shippingCost: { type: Number, default: 0 },
+    tax: { type: Number, default: 0, min: 0 },
     subtotal: { type: Number, required: true },
     total: { type: Number, required: true },
     status: {
@@ -45,11 +62,18 @@ const OrderSchema = new mongoose.Schema(
       default: "pending",
     },
     paidAt: Date,
+    shippedAt: Date,
+    deliveredAt: Date,
+    cancelledAt: Date,
+    reservationExpiresAt: Date,
+    statusHistory: { type: [StatusHistorySchema], default: () => [] },
   },
   { timestamps: true },
 );
 
 OrderSchema.index({ user: 1, createdAt: -1 });
+OrderSchema.index({ user: 1, checkoutKey: 1 }, { unique: true, sparse: true });
+OrderSchema.index({ status: 1, reservationExpiresAt: 1 });
 // Note: stripeSessionId index is already created by unique: true constraint
 
 module.exports = mongoose.model("Order", OrderSchema);

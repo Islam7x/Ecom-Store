@@ -1,111 +1,63 @@
 const BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
-// Create a fetch-based API client
-export const API = {
-  async get(endpoint, options = {}) {
-    // Ensure endpoint starts with /api
-    const fullEndpoint = endpoint.startsWith("/api")
-      ? endpoint
-      : `/api${endpoint}`;
-    let url = `${BASE_URL}${fullEndpoint}`;
-
-    if (options.params) {
-      const urlObj = new URL(url);
-      Object.entries(options.params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== "") {
-          urlObj.searchParams.append(key, value);
-        }
-      });
-      url = urlObj.toString();
+const parseErrorMessage = async (response) => {
+  try {
+    const data = await response.json();
+    if (data?.message) return data.message;
+    if (Array.isArray(data?.errors)) {
+      return data.errors.map((e) => e.message || e).join("; ");
     }
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return { data: await response.json() };
-  },
-
-  async post(endpoint, data = {}, options = {}) {
-    // Ensure endpoint starts with /api
-    const fullEndpoint = endpoint.startsWith("/api")
-      ? endpoint
-      : `/api${endpoint}`;
-    const url = `${BASE_URL}${fullEndpoint}`;
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      body: JSON.stringify(data),
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return { data: await response.json() };
-  },
-
-  async put(endpoint, data = {}, options = {}) {
-    // Ensure endpoint starts with /api
-    const fullEndpoint = endpoint.startsWith("/api")
-      ? endpoint
-      : `/api${endpoint}`;
-    const url = `${BASE_URL}${fullEndpoint}`;
-
-    const response = await fetch(url, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      body: JSON.stringify(data),
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return { data: await response.json() };
-  },
-
-  async delete(endpoint, options = {}) {
-    // Ensure endpoint starts with /api
-    const fullEndpoint = endpoint.startsWith("/api")
-      ? endpoint
-      : `/api${endpoint}`;
-    const url = `${BASE_URL}${fullEndpoint}`;
-
-    const response = await fetch(url, {
-      method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    return { data: await response.json() };
-  },
+  } catch {
+    // response body wasn't JSON
+  }
+  return `Request failed (${response.status})`;
 };
 
-// Export BASE_URL for direct fetch calls if needed
+const request = async (method, endpoint, { body, params, headers } = {}) => {
+  const fullEndpoint = endpoint.startsWith("/api")
+    ? endpoint
+    : `/api${endpoint}`;
+  let url = `${BASE_URL}${fullEndpoint}`;
+
+  if (params) {
+    const urlObj = new URL(url);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== "") {
+        urlObj.searchParams.append(key, value);
+      }
+    });
+    url = urlObj.toString();
+  }
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...headers,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const message = await parseErrorMessage(response);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
+  }
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  return { data, response };
+};
+
+export const API = {
+  get: (endpoint, options = {}) => request("GET", endpoint, options),
+  post: (endpoint, data = {}, options = {}) =>
+    request("POST", endpoint, { ...options, body: data }),
+  put: (endpoint, data = {}, options = {}) =>
+    request("PUT", endpoint, { ...options, body: data }),
+  delete: (endpoint, options = {}) => request("DELETE", endpoint, options),
+};
+
 export const BASE_API_URL = BASE_URL;

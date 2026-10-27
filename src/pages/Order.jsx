@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { API } from "../lib/api";
 import { getCurrentUser, isAuthenticated } from "../lib/user";
-import { Package, ChevronRight, AlertCircle } from "lucide-react";
+import { formatMoney } from "../lib/format";
+import { Package, AlertCircle } from "lucide-react";
 import Login from "./Login";
 
 const Order = () => {
@@ -20,21 +22,12 @@ const Order = () => {
 
       try {
         setLoading(true);
-        const response = await fetch(
-          `${API}/api/orders?page=${page}&limit=10`,
-          {
-            credentials: "include",
-          },
-        );
-
-        if (!response.ok) {
-          throw new Error("Failed to fetch orders");
-        }
-
-        const data = await response.json();
-        setOrders(data.orders);
-        setTotalPages(data.pages);
-        setTotal(data.total);
+        const { data } = await API.get("/orders", {
+          params: { page, limit: 10 },
+        });
+        setOrders(data.orders || []);
+        setTotalPages(data.pages || 1);
+        setTotal(data.total || 0);
         setError(null);
       } catch (err) {
         console.error("Error fetching orders:", err);
@@ -101,12 +94,12 @@ const Order = () => {
           <p className="text-gray-600 dark:text-gray-400 mb-6">
             You haven't placed any orders yet. Start shopping to see them here!
           </p>
-          <a
-            href="/"
-            className="inline-block rounded-lg bg-blue-600 px-6 py-3 text-white font-medium hover:bg-blue-700 transition-colors"
+          <Link
+            to="/"
+            className="inline-block rounded-lg bg-[#1a146b] px-6 py-3 text-white font-medium hover:bg-[#13104f] transition-colors"
           >
             Continue Shopping
-          </a>
+          </Link>
         </div>
       ) : (
         <div className="space-y-4">
@@ -213,7 +206,7 @@ function OrderCard({ order }) {
               {item.name} x {item.quantity}
             </span>
             <span className="font-medium text-gray-900 dark:text-white">
-              ${(item.price * item.quantity).toFixed(2)}
+              {formatMoney(item.price * item.quantity)}
             </span>
           </div>
         ))}
@@ -223,15 +216,15 @@ function OrderCard({ order }) {
       <div className="space-y-2 mb-4">
         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
           <span>Subtotal:</span>
-          <span>${order.subtotal.toFixed(2)}</span>
+          <span>{formatMoney(order.subtotal)}</span>
         </div>
         <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
           <span>Shipping:</span>
-          <span>${order.shippingCost.toFixed(2)}</span>
+          <span>{formatMoney(order.shippingCost)}</span>
         </div>
         <div className="flex justify-between text-lg font-bold text-gray-900 dark:text-white pt-2 border-t border-gray-200 dark:border-gray-700">
           <span>Total:</span>
-          <span>${order.total.toFixed(2)}</span>
+          <span>{formatMoney(order.total)}</span>
         </div>
       </div>
 
@@ -259,11 +252,6 @@ function OrderCard({ order }) {
         </div>
       )}
 
-      {/* Action Button */}
-      <button className="w-full flex items-center justify-between px-4 py-2 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors font-medium">
-        View Order Details
-        <ChevronRight className="h-4 w-4" />
-      </button>
     </div>
   );
 }

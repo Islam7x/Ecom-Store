@@ -5,12 +5,13 @@ import { FaXTwitter } from "react-icons/fa6";
 import amexLogo from "payment-icons/min/flat/amex.svg";
 import mastercardLogo from "payment-icons/min/flat/mastercard.svg";
 import visaLogo from "payment-icons/min/flat/visa.svg";
+import { STORE_CATEGORIES } from "../lib/categories";
 
 const socialLinks = [
   { label: "Facebook", icon: FaFacebookF, url: "https://www.facebook.com" },
   { label: "X", icon: FaXTwitter, url: "https://www.x.com" },
   { label: "Instagram", icon: FaInstagram, url: "https://www.instagram.com" },
-  { label: "Email", icon: FaEnvelope, url: "mailto:support@ecomstore.com" },
+  { label: "Email", icon: FaEnvelope, url: "mailto:support@luxe.store" },
 ];
 
 const paymentMethods = [
@@ -35,20 +36,17 @@ const Footer = () => {
   return (
     <footer className="border-t border-[#001a4d] bg-[#001a4d] text-white">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-10">
-        {/* Main Footer Content */}
         <div className="grid grid-cols-1 gap-8 md:grid-cols-4">
-          {/* Brand Section */}
           <div className="space-y-4">
-            <h3 className="text-lg font-bold text-white">Ecom Store</h3>
+            <h3 className="text-lg font-bold text-white">LUXE</h3>
             <p className="text-sm text-gray-300">
-              Your trusted online marketplace for quality products and
-              exceptional service.
+              A multi-category marketplace for electronics, fashion, home, and
+              everyday essentials. Free shipping on qualifying orders.
             </p>
           </div>
 
-          {/* Quick Links */}
           <div className="space-y-4">
-            <h4 className="font-semibold text-white">Quick Links</h4>
+            <h4 className="font-semibold text-white">Shop</h4>
             <ul className="space-y-2">
               <li>
                 <Link
@@ -58,73 +56,57 @@ const Footer = () => {
                   Home
                 </Link>
               </li>
-              <li>
-                <Link
-                  to="/cart"
-                  className="text-sm text-gray-300 hover:text-white transition-colors"
-                >
-                  Cart
-                </Link>
-              </li>
-              <li>
-                <a
-                  href="#"
-                  className="text-sm text-gray-300 hover:text-white transition-colors"
-                >
-                  Products
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#"
-                  className="text-sm text-gray-300 hover:text-white transition-colors"
-                >
-                  About Us
-                </a>
-              </li>
+              {STORE_CATEGORIES.slice(0, 5).map((category) => (
+                <li key={category.slug}>
+                  <Link
+                    to={`/category/${category.slug}`}
+                    className="text-sm text-gray-300 hover:text-white transition-colors"
+                  >
+                    {category.name}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </div>
 
-          {/* Support */}
           <div className="space-y-4">
-            <h4 className="font-semibold text-white">Support</h4>
+            <h4 className="font-semibold text-white">Help</h4>
             <ul className="space-y-2">
               <li>
-                <a
-                  href="#"
+                <Link
+                  to="/help/contact"
                   className="text-sm text-gray-300 hover:text-white transition-colors"
                 >
                   Contact Us
-                </a>
+                </Link>
               </li>
               <li>
-                <a
-                  href="#"
+                <Link
+                  to="/help/faq"
                   className="text-sm text-gray-300 hover:text-white transition-colors"
                 >
                   FAQ
-                </a>
+                </Link>
               </li>
               <li>
-                <a
-                  href="#"
+                <Link
+                  to="/help/shipping"
                   className="text-sm text-gray-300 hover:text-white transition-colors"
                 >
                   Shipping Info
-                </a>
+                </Link>
               </li>
               <li>
-                <a
-                  href="#"
+                <Link
+                  to="/help/returns"
                   className="text-sm text-gray-300 hover:text-white transition-colors"
                 >
                   Returns
-                </a>
+                </Link>
               </li>
             </ul>
           </div>
 
-          {/* Social Links */}
           <div className="space-y-4">
             <h4 className="font-semibold text-white">Follow Us</h4>
             <div className="flex gap-4">
@@ -144,7 +126,6 @@ const Footer = () => {
           </div>
         </div>
 
-        {/* Payment Methods */}
         <div className="my-8 rounded-lg bg-[#001a4d] p-6">
           <h4 className="mb-4 text-center text-sm font-semibold text-white">
             We accept
@@ -174,27 +155,25 @@ const Footer = () => {
           </div>
         </div>
 
-        {/* Divider */}
         <div className="my-8 border-t border-gray-600"></div>
 
-        {/* Bottom Footer */}
         <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
           <p className="text-sm text-gray-300">
-            &copy; {currentYear} Ecom Store. All rights reserved.
+            &copy; {currentYear} LUXE. All rights reserved.
           </p>
           <div className="flex gap-6">
-            <a
-              href="#"
+            <Link
+              to="/help/privacy"
               className="text-sm text-gray-300 hover:text-white transition-colors"
             >
               Privacy Policy
-            </a>
-            <a
-              href="#"
+            </Link>
+            <Link
+              to="/help/terms"
               className="text-sm text-gray-300 hover:text-white transition-colors"
             >
               Terms of Service
-            </a>
+            </Link>
           </div>
         </div>
       </div>

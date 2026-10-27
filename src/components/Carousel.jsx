@@ -1,57 +1,51 @@
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
+
+const slides = [
+  {
+    id: 1,
+    title: "All your essentials",
+    subtitle: "in one place",
+    tagline: "Free shipping on qualifying orders",
+    href: "/products",
+    image: "/images/essentials.jpg",
+    textColor: "text-white",
+  },
+  {
+    id: 2,
+    title: "Everyday fashion",
+    subtitle: "New season picks",
+    tagline: "Shop apparel and accessories",
+    href: "/category/fashion",
+    bgHex: "#806d5e",
+    bgPosition: "80% center",
+    image: "/images/fashion.png",
+    textColor: "text-white",
+  },
+  {
+    id: 3,
+    title: "Top picks in",
+    subtitle: "Electronics",
+    tagline: "Phones, audio, and more",
+    href: "/category/electronics",
+    image:
+      "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1200&h=600&fit=crop",
+    textColor: "text-white",
+  },
+  {
+    id: 4,
+    title: "Home upgrades",
+    subtitle: "that actually last",
+    tagline: "Kitchen and living essentials",
+    href: "/category/home-appliances",
+    image:
+      "https://images.unsplash.com/photo-1556912173-46c336c7fd55?w=1200&h=600&fit=crop",
+    textColor: "text-white",
+  },
+];
 
 const Carousel = () => {
-  const slides = [
-    {
-      id: 1,
-      title: "All your essentials",
-      subtitle: "in one place",
-      bgColor: "bg-orange-500",
-      image: "/images/essentials.jpg",
-      textColor: "text-white",
-    },
-    {
-      id: 2,
-      title: "Everyday",
-      subtitle: "Fashion Deals",
-      tagline: "Starting EGP 199",
-      bgColor: "",
-      bgHex: "#806d5e",
-      bgPosition: "80% center",
-      showText: false,
-      image: "/images/fashion.png",
-      textColor: "text-gray-900",
-    },
-    {
-      id: 3,
-      title: "Top picks in",
-      subtitle: "Electronics",
-      tagline: "From 499 EGP",
-      bgColor: "bg-orange-500",
-      image:
-        "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=600&h=400&fit=crop",
-      textColor: "text-white",
-    },
-    {
-      id: 4,
-      title: "Extra savings",
-      subtitle: "with NBE Visa Credit Cards",
-      bgColor: "bg-blue-100",
-      image:
-        "https://images.unsplash.com/photo-1588880331179-bc9b8a0798b8?w=600&h=400&fit=crop",
-      textColor: "text-gray-900",
-    },
-    {
-      id: 5,
-      title: "Today's Deals",
-      subtitle: "with Free shipping",
-      bgColor: "bg-red-500",
-      image:
-        "https://images.unsplash.com/photo-1578474846511-04e6b99fcd37?w=600&h=400&fit=crop",
-      textColor: "text-white",
-    },
-  ];
 
   const [currentSlide, setCurrentSlide] = useState(0);
 
@@ -61,7 +55,7 @@ const Carousel = () => {
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [slides.length]);
+  }, []);
 
   const goToSlide = (index) => {
     setCurrentSlide(index);
@@ -112,28 +106,31 @@ const Carousel = () => {
 
             {/* Content Container */}
             <div className="relative h-full mx-auto max-w-7xl px-4 sm:px-6 lg:px-10 flex items-center">
-              {/* Left Content */}
               <div className="flex-1">
-                {s.showText !== false && (
-                  <>
-                    <h2
-                      className={`text-4xl sm:text-5xl font-bold ${s.textColor} leading-tight`}
-                    >
-                      {s.title}
-                    </h2>
-                    <p
-                      className={`text-3xl sm:text-4xl font-bold ${s.textColor} mt-2`}
-                    >
-                      {s.subtitle}
-                    </p>
-                    {s.tagline && (
-                      <p
-                        className={`text-xl sm:text-2xl font-semibold ${s.textColor} mt-3`}
-                      >
-                        {s.tagline}
-                      </p>
-                    )}
-                  </>
+                <h2
+                  className={`text-4xl sm:text-5xl font-bold ${s.textColor} leading-tight`}
+                >
+                  {s.title}
+                </h2>
+                <p
+                  className={`text-3xl sm:text-4xl font-bold ${s.textColor} mt-2`}
+                >
+                  {s.subtitle}
+                </p>
+                {s.tagline && (
+                  <p
+                    className={`text-xl sm:text-2xl font-semibold ${s.textColor} mt-3`}
+                  >
+                    {s.tagline}
+                  </p>
+                )}
+                {s.href && (
+                  <Link
+                    to={s.href}
+                    className="mt-6 inline-flex rounded-full bg-white px-5 py-2 text-sm font-bold text-[#1a146b]"
+                  >
+                    Shop this collection
+                  </Link>
                 )}
               </div>
 

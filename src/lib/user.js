@@ -1,3 +1,5 @@
+import { API } from "./api";
+
 /**
  * Get the current authenticated user from localStorage
  * Returns null if no user is logged in
@@ -6,8 +8,7 @@ export function getCurrentUser() {
   try {
     const userInfo = localStorage.getItem("userInfo");
     return userInfo ? JSON.parse(userInfo) : null;
-  } catch (err) {
-    console.error("Error parsing user info:", err);
+  } catch {
     return null;
   }
 }
@@ -20,9 +21,22 @@ export function isAuthenticated() {
 }
 
 /**
+ * Persist user info after a successful auth response
+ */
+export function setCurrentUser(user) {
+  localStorage.setItem("userInfo", JSON.stringify(user));
+  window.dispatchEvent(new Event("auth:changed"));
+}
+
+/**
  * Clear user data (logout)
  */
-export function clearUser() {
+export async function clearUser() {
+  try {
+    await API.post("/auth/logout");
+  } catch {
+    // Cookie may already be gone; still clear local session.
+  }
   localStorage.removeItem("userInfo");
   window.dispatchEvent(new Event("auth:changed"));
 }

@@ -21,6 +21,8 @@ import Order from "./pages/Order";
 import ProductDetails from "./pages/ProductDetails";
 import Wishlist from "./pages/Wishlist";
 import CategoryPage from "./pages/CategoryPage";
+import Help from "./pages/Help";
+import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/AdminDashboard";
 import AdminProducts from "./pages/AdminProducts";
 import AdminOrders from "./pages/AdminOrders";
@@ -29,28 +31,15 @@ import AdminSettings from "./pages/AdminSettings";
 import { useEffect, useState } from "react";
 import { API } from "./lib/api";
 
-// Protected route wrapper for admin
 function AdminRoute({ children }) {
   const [isAdmin, setIsAdmin] = useState(null);
 
   useEffect(() => {
     const checkAdminStatus = async () => {
       try {
-        // First check localStorage
-        const userInfo = localStorage.getItem("userInfo");
-        if (userInfo) {
-          const user = JSON.parse(userInfo);
-          if (user.isAdmin) {
-            setIsAdmin(true);
-            return;
-          }
-        }
-
-        // If not in localStorage, check from API
         const response = await API.get("/auth/me");
-        setIsAdmin(response.data?.isAdmin || false);
-      } catch (error) {
-        console.error("Error checking admin status:", error);
+        setIsAdmin(Boolean(response.data?.isAdmin));
+      } catch {
         setIsAdmin(false);
       }
     };
@@ -59,17 +48,20 @@ function AdminRoute({ children }) {
   }, []);
 
   if (isAdmin === null) {
-    return <div>Loading...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center text-[#474651]">
+        Checking admin access...
+      </div>
+    );
   }
 
   if (!isAdmin) {
-    return <Navigate to="/" />;
+    return <Navigate to="/login" replace />;
   }
 
   return children;
 }
 
-// Layout wrapper component to handle conditional navbar
 function AppContent() {
   const location = useLocation();
   const isAdminRoute = location.pathname.startsWith("/admin");
@@ -87,6 +79,7 @@ function AppContent() {
       <main className="flex-1">
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Login />} />
           <Route path="/account" element={<Account />} />
           <Route path="/" element={<Home />} />
           <Route path="/products" element={<Home />} />
@@ -96,8 +89,9 @@ function AppContent() {
           <Route path="/orders" element={<Order />} />
           <Route path="/product/:id" element={<ProductDetails />} />
           <Route path="/category/:id" element={<CategoryPage />} />
+          <Route path="/help/:slug" element={<Help />} />
+          <Route path="/help" element={<Navigate to="/help/faq" replace />} />
 
-          {/* Admin Routes */}
           <Route
             path="/admin"
             element={
@@ -138,6 +132,7 @@ function AppContent() {
               </AdminRoute>
             }
           />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
       {!isAdminRoute && <Footer />}

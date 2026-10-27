@@ -23,12 +23,20 @@ const Success = () => {
         Your order has been placed successfully. You will receive a confirmation
         shortly.
       </p>
-      <Link
-        to="/"
-        className="mt-10 bg-gray-900 dark:bg-gray-800 text-white px-10 py-4 rounded-2xl font-bold hover:bg-blue-600 dark:hover:bg-blue-600 transition-all shadow-xl"
-      >
-        Continue Shopping
-      </Link>
+      <div className="mt-10 flex flex-wrap justify-center gap-4">
+        <Link
+          to="/orders"
+          className="bg-[#1a146b] text-white px-10 py-4 rounded-2xl font-bold hover:bg-[#13104f] transition-all shadow-xl"
+        >
+          View orders
+        </Link>
+        <Link
+          to="/"
+          className="border border-[#1a146b] text-[#1a146b] px-10 py-4 rounded-2xl font-bold hover:bg-[#f6f2fa] transition-all"
+        >
+          Continue shopping
+        </Link>
+      </div>
     </div>
   );
 };

@@ -50,7 +50,7 @@ describe("Stripe Webhook Handler", () => {
     product = await Product.create({
       name: "Webhook Watch",
       price: 150.0,
-      stock: 5,
+      stock: 3, // Two units are already reserved by the pending checkout.
     });
 
     order = await Order.create({
@@ -118,9 +118,9 @@ describe("Stripe Webhook Handler", () => {
     const updatedOrder = await Order.findById(order._id);
     expect(updatedOrder.status).toBe("cancelled");
 
-    // Stock should be released (original stock was 5, 2 was reserved in order, now should be back to 7)
+    // Stock should be released back to the pre-checkout level.
     const updatedProduct = await Product.findById(product._id);
-    expect(updatedProduct.stock).toBe(7);
+    expect(updatedProduct.stock).toBe(5);
   });
 
   test("POST /api/webhook -> Should return 400 if Stripe signature verification fails", async () => {

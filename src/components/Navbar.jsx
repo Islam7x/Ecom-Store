@@ -1,14 +1,27 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
-import { ShoppingCart, Package, Heart, LogIn } from "lucide-react";
+import { useWishlist } from "../context/WishlistContext";
+import { ShoppingCart, Package, Heart, LogIn, Search } from "lucide-react";
 import LocationSelector from "./LocationSelector";
+import { clearUser } from "../lib/user";
 
 const Navbar = () => {
   const { cartCount } = useCart();
+  const { count: wishlistCount } = useWishlist();
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchState, setSearchState] = useState(() => ({
+    locationSearch: location.search,
+    query: new URLSearchParams(location.search).get("search") || "",
+  }));
+  const searchQuery =
+    searchState.locationSearch === location.search
+      ? searchState.query
+      : new URLSearchParams(location.search).get("search") || "";
+  const updateSearchQuery = (query) =>
+    setSearchState({ locationSearch: location.search, query });
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const [user, setUser] = useState(() => {
     const storedUser = localStorage.getItem("userInfo");
@@ -30,10 +43,16 @@ const Navbar = () => {
     };
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem("userInfo");
+  const handleLogout = async () => {
+    await clearUser();
     setUser(null);
-    window.dispatchEvent(new Event("auth:changed"));
+  };
+
+  const submitSearch = (event) => {
+    event.preventDefault();
+    const query = searchQuery.trim();
+    navigate(query ? `/products?search=${encodeURIComponent(query)}` : "/products");
+    setMobileSearchOpen(false);
   };
 
   const displayName = user?.name || user?.email || "Account";
@@ -87,30 +106,32 @@ const Navbar = () => {
           <LocationSelector />
         </div>
 
-        <div className="hidden flex-1 justify-center px-8 lg:flex">
+        <form
+          onSubmit={submitSearch}
+          className="hidden flex-1 justify-center px-8 lg:flex"
+        >
           <div className="relative w-full max-w-md">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-sm font-semibold text-[#777682]">
-              Search
-            </span>
+            <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#777682]" />
             <input
-              type="text"
+              type="search"
               aria-label="Search products"
-              className="w-full rounded-full border border-transparent bg-[#f6f2fa] py-3 pl-20 pr-4 text-sm outline-none transition shadow-md hover:shadow-[0_4px_12px_rgba(26,20,107,0.2)] focus:shadow-[0_8px_16px_rgba(26,20,107,0.25)] focus:border-[#1a146b] focus:ring-0"
-              placeholder="Search products..."
+              className="w-full rounded-full border border-transparent bg-[#f6f2fa] py-3 pl-11 pr-4 text-sm outline-none transition shadow-md hover:shadow-[0_4px_12px_rgba(26,20,107,0.2)] focus:shadow-[0_8px_16px_rgba(26,20,107,0.25)] focus:border-[#1a146b] focus:ring-0"
+              placeholder="Search phones, fashion, home..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  navigate(
-                    `/products?search=${encodeURIComponent(searchQuery)}`,
-                  );
-                }
-              }}
+              onChange={(e) => updateSearchQuery(e.target.value)}
             />
           </div>
-        </div>
+        </form>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="inline-flex rounded-lg p-2 text-[#474651] hover:bg-[#f6f2fa] lg:hidden"
+            onClick={() => setMobileSearchOpen((open) => !open)}
+            aria-label="Search products"
+          >
+            <Search size={20} />
+          </button>
           {user ? (
             <div className="relative">
               {user.picture ? (
@@ -152,7 +173,7 @@ const Navbar = () => {
                     to="/admin"
                     className="block px-4 py-3 text-sm font-semibold text-blue-600 transition-colors hover:bg-blue-50 border-t border-[#e5e1e9]"
                   >
-                    🔧 Admin Panel
+                    Admin Panel
                   </Link>
                 )}
                 <button
@@ -164,7 +185,8 @@ const Navbar = () => {
               </div>
             </div>
           ) : (
-            location.pathname !== "/login" && (
+            location.pathname !== "/login" &&
+            location.pathname !== "/signup" && (
               <Link
                 to="/login"
                 className="hidden items-center gap-1.5 rounded-lg border border-[#1a146b] px-4 py-2 text-sm font-bold text-[#1a146b] transition hover:bg-[#1a146b] hover:text-white sm:inline-flex"
@@ -182,12 +204,12 @@ const Navbar = () => {
             <div className="relative inline-flex">
               <ShoppingCart className="h-6 w-6" />
               {cartCount > 0 && (
-                <span className="absolute -top-1 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#ff8c42] text-[9px] font-bold text-white">
+                <span className="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ff8c42] px-1 text-[9px] font-bold text-white">
                   {cartCount}
                 </span>
               )}
             </div>
-            Cart
+            <span className="hidden sm:inline">Cart</span>
           </Link>
           <Link
             to="/orders"
@@ -199,13 +221,34 @@ const Navbar = () => {
           <Link
             to="/wishlist"
             aria-label="Wishlist"
-            className="hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#474651] transition hover:text-[#ba1a1a] hover:bg-[#ffdad6]/40 sm:inline-flex"
+            className="relative hidden items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-[#474651] transition hover:text-[#ba1a1a] hover:bg-[#ffdad6]/40 sm:inline-flex"
           >
             <Heart size={18} />
             Wishlist
+            {wishlistCount > 0 && (
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ba1a1a] px-1 text-[10px] font-bold text-white">
+                {wishlistCount}
+              </span>
+            )}
           </Link>
         </div>
       </nav>
+      {mobileSearchOpen && (
+        <form
+          onSubmit={submitSearch}
+          className="border-t border-[#e5e1e9] bg-white px-4 py-3 lg:hidden"
+        >
+          <input
+            type="search"
+            aria-label="Search products"
+            className="w-full rounded-full border border-[#e5e1e9] bg-[#f6f2fa] px-4 py-3 text-sm outline-none focus:border-[#1a146b]"
+            placeholder="Search products..."
+            value={searchQuery}
+            onChange={(e) => updateSearchQuery(e.target.value)}
+            autoFocus
+          />
+        </form>
+      )}
     </header>
   );
 };

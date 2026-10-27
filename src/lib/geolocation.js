@@ -4,7 +4,8 @@ import {
   getLocationById,
   matchLocationFromText,
   resolveGovernorate,
-} from "../data/locations";
+  fetchDeliveryLocations,
+} from "./locations";
 
 const EGYPT_BOUNDS = {
   minLat: 22,
@@ -52,6 +53,7 @@ const reverseGeocode = async (lat, lng) => {
 };
 
 export const detectDeliveryLocation = async () => {
+  const locations = await fetchDeliveryLocations();
   const position = await getCurrentPosition();
   const { latitude, longitude } = position.coords;
 
@@ -61,7 +63,7 @@ export const detectDeliveryLocation = async () => {
     );
   }
 
-  const nearest = findNearestLocation(latitude, longitude);
+  const nearest = findNearestLocation(latitude, longitude, locations);
   let cityArea = nearest.name;
   let governorate = nearest.governorate;
   let district = "";
@@ -88,7 +90,7 @@ export const detectDeliveryLocation = async () => {
   }
 
   const matchedLocation =
-    matchLocationFromText({ cityArea, governorate }) ?? nearest;
+    matchLocationFromText({ cityArea, governorate }, locations) ?? nearest;
 
   return {
     locationId: matchedLocation.id,
@@ -108,11 +110,12 @@ export const safeDetectDeliveryLocation = async () => {
   try {
     return { success: true, data: await detectDeliveryLocation() };
   } catch (error) {
+    const locations = await fetchDeliveryLocations();
     return {
       success: false,
       data: {
         locationId: DEFAULT_LOCATION_ID,
-        location: getLocationById(DEFAULT_LOCATION_ID),
+        location: getLocationById(DEFAULT_LOCATION_ID, locations),
       },
       error: error.message || "Unable to detect your location.",
     };

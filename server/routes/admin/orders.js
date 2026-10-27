@@ -15,11 +15,15 @@ const statusSchema = Joi.object({
 });
 
 const addressSchema = Joi.object({
-  address: Joi.string().trim().required(),
-  city: Joi.string().trim().required(),
-  state: Joi.string().trim().required(),
-  zipcode: Joi.string().trim().required(),
-  country: Joi.string().trim().required(),
+  fullName: Joi.string().trim().required(),
+  mobile: Joi.string().trim().required(),
+  street: Joi.string().trim().required(),
+  building: Joi.string().allow("").optional(),
+  cityArea: Joi.string().trim().required(),
+  district: Joi.string().allow("").optional(),
+  governorate: Joi.string().trim().required(),
+  landmark: Joi.string().allow("").optional(),
+  addressType: Joi.string().valid("home", "office").optional(),
 });
 
 // GET all orders with pagination and filters

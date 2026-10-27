@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import ProductCard from "./ProductCard";
 import HorizontalScroller from "./HorizontalScroller";
-import { BASE_API_URL } from "../lib/api";
+import { API } from "../lib/api";
+import { parseProductsResponse } from "../lib/products";
+import { categoryToSlug } from "../lib/categories";
 
 const ProductSlider = ({ title, category }) => {
   const [products, setProducts] = useState([]);
@@ -10,35 +13,16 @@ const ProductSlider = ({ title, category }) => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const params = new URLSearchParams({ limit: "10" });
-        if (category) params.set("category", category);
-        const url = `${BASE_API_URL}/api/products?${params.toString()}`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        let fetchedProducts = [];
-        if (Array.isArray(data)) {
-          fetchedProducts = data.slice(0, 10);
-        } else if (data && Array.isArray(data.products)) {
-          fetchedProducts = data.products.slice(0, 10);
-        }
-
-        // If no products found from API, generate beautiful mock data
-        if (fetchedProducts.length === 0) {
-          fetchedProducts = Array.from({ length: 10 }).map((_, i) => ({
-            _id: `mock-${category || "item"}-${i}`,
-            name: `Premium ${category ? category.charAt(0).toUpperCase() + category.slice(1) : "Product"} Series ${i + 1}X`,
-            price: Math.floor(Math.random() * 800) + 199,
-            image: `https://placehold.co/400x400/f0ecf4/1b1b21?text=${category ? category.substring(0, 3).toUpperCase() : "ITM"}-${i + 1}`,
-            stock: 10,
-            category: category || "general",
-          }));
-        }
-
-        setProducts(fetchedProducts);
-      } catch (error) {
-        console.error("Error fetching products:", error);
+        const { data } = await API.get("/products", {
+          params: {
+            limit: 10,
+            page: 1,
+            ...(category ? { category } : { sort: "newest" }),
+          },
+        });
+        setProducts(parseProductsResponse(data).products.slice(0, 10));
+      } catch {
+        setProducts([]);
       } finally {
         setLoading(false);
       }
@@ -53,9 +37,16 @@ const ProductSlider = ({ title, category }) => {
         <h2 className="text-2xl sm:text-4xl font-black italic tracking-widest text-[#1b1b21] uppercase">
           {title}
         </h2>
-        <button className="bg-black text-white px-8 py-3 rounded-lg font-bold uppercase text-sm tracking-widest hover:bg-gray-800 transition">
+        <Link
+          to={
+            category
+              ? `/category/${categoryToSlug(category)}`
+              : "/products?sort=newest"
+          }
+          className="bg-black text-white px-8 py-3 rounded-lg font-bold uppercase text-sm tracking-widest hover:bg-gray-800 transition"
+        >
           View All
-        </button>
+        </Link>
       </div>
 
       {loading ? (

@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
-import { MapPin, ChevronDown, Check, Loader2 } from "lucide-react";
+import { MapPin, ChevronDown, Loader2 } from "lucide-react";
 import { useDeliveryLocation } from "../context/LocationContext";
-import { DELIVERY_LOCATIONS } from "../data/locations";
 import MapLocationModal from "./MapLocationModal";
 
 const LocationSelector = ({ variant = "compact" }) => {
@@ -35,7 +34,7 @@ const LocationSelector = ({ variant = "compact" }) => {
         <div className={`min-w-0 ${isCompact ? "hidden sm:block" : "flex-1"}`}>
           {isCompact ? (
             <span className="block truncate font-semibold text-[#1b1b21]">
-              {location.name}
+              {location?.name ?? "Select location"}
             </span>
           ) : (
             <>
@@ -43,13 +42,13 @@ const LocationSelector = ({ variant = "compact" }) => {
                 Deliver to
               </p>
               <p className="truncate font-semibold text-[#1b1b21]">
-                {location.name}, {location.governorate}
+                {location?.name ?? "Select location"}
+                {location?.governorate ? `, ${location.governorate}` : ""}
               </p>
               <p className="text-sm text-[#474651]">
-                {location.shippingCost === 0
+                {location?.shippingCost === 0
                   ? "Free delivery"
-                  : `$${location.shippingCost.toFixed(2)} shipping`}{" "}
-                · {location.deliveryDays} business days
+                  : `$${Number(location?.shippingCost ?? 0).toFixed(2)} shipping`} · {location?.deliveryDays ?? "1–2"} business days
               </p>
             </>
           )}

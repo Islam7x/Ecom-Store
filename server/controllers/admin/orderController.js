@@ -1,193 +1,148 @@
-// server/controllers/admin/orderController.js
 const Order = require("../../models/Order");
+const { safeSearchPattern } = require("../../lib/query");
+const {
+  REVENUE_ORDER_STATUSES,
+  cancelPendingOrder,
+  statusEvent,
+} = require("../../lib/orderLifecycle");
 
-// ──────────────────────────────────────────────
 // GET /api/admin/orders
-// All orders with pagination and optional filters
-// ──────────────────────────────────────────────
 exports.getAllOrders = async (req, res) => {
-  try {
-    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-    const limit = Math.min(
-      100,
-      Math.max(1, parseInt(req.query.limit, 10) || 20),
-    );
-    const skip = (page - 1) * limit;
+  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+  const skip = (page - 1) * limit;
+  const filter = {};
 
-    const filter = {};
-    if (req.query.status) {
-      filter.status = req.query.status;
-    }
-    if (req.query.user) {
-      filter.user = req.query.user;
-    }
-    if (req.query.search) {
-      filter.$or = [
-        { stripeSessionId: { $regex: req.query.search, $options: "i" } },
-      ];
-    }
+  if (req.query.status) filter.status = req.query.status;
+  if (req.query.user) filter.user = req.query.user;
 
-    const [orders, total] = await Promise.all([
-      Order.find(filter)
-        .populate("user", "name email picture")
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
-        .lean(),
-      Order.countDocuments(filter),
-    ]);
-
-    res.json({
-      orders,
-      page,
-      pages: Math.ceil(total / limit),
-      total,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  const searchPattern = safeSearchPattern(req.query.search);
+  if (searchPattern) {
+    filter.$or = [
+      { stripeSessionId: { $regex: searchPattern, $options: "i" } },
+      { checkoutKey: { $regex: searchPattern, $options: "i" } },
+    ];
   }
+
+  const [orders, total] = await Promise.all([
+    Order.find(filter)
+      .populate("user", "name email picture")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    Order.countDocuments(filter),
+  ]);
+
+  res.json({ orders, page, pages: Math.ceil(total / limit), total });
 };
 
-// ──────────────────────────────────────────────
 // GET /api/admin/orders/:id
-// Get order details
-// ──────────────────────────────────────────────
 exports.getOrderById = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id).populate(
-      "user",
-      "name email picture address",
-    );
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    res.json(order);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  const order = await Order.findById(req.params.id).populate(
+    "user",
+    "name email picture",
+  );
+  if (!order) return res.status(404).json({ message: "Order not found" });
+  res.json(order);
 };
 
-// ──────────────────────────────────────────────
 // PUT /api/admin/orders/:id/status
-// Update an order's status
-// ──────────────────────────────────────────────
 exports.updateOrderStatus = async (req, res) => {
-  try {
-    const { status } = req.body;
+  const { status } = req.body;
+  const order = await Order.findById(req.params.id);
 
-    const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
+  if (!order) return res.status(404).json({ message: "Order not found" });
 
-    // Validate status transitions
-    const validTransitions = {
-      pending: ["paid", "cancelled"],
-      paid: ["shipped", "cancelled"],
-      shipped: ["delivered"],
-      delivered: [],
-      cancelled: [],
-    };
-
-    const allowed = validTransitions[order.status] || [];
-    if (!allowed.includes(status)) {
-      return res.status(400).json({
-        message: `Cannot transition from "${order.status}" to "${status}". Allowed: ${allowed.join(", ") || "none"}`,
-      });
-    }
-
-    order.status = status;
-    if (status === "paid" && !order.paidAt) {
-      order.paidAt = new Date();
-    }
-    await order.save();
-
-    res.json(order);
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  if (order.status === "pending" && status === "cancelled") {
+    const cancelled = await cancelPendingOrder(order._id, {
+      actor: "admin",
+      note: "Cancelled by store staff",
+    });
+    return res.json(cancelled);
   }
+
+  const transitions = {
+    paid: ["shipped"],
+    shipped: ["delivered"],
+    delivered: [],
+    cancelled: [],
+  };
+  const allowed = transitions[order.status] || [];
+
+  if (!allowed.includes(status)) {
+    const message =
+      order.status === "pending" && status === "paid"
+        ? "Payment is confirmed only by a verified Stripe webhook"
+        : `Cannot transition from "${order.status}" to "${status}". Allowed: ${allowed.join(", ") || "none"}`;
+    return res.status(400).json({ message });
+  }
+
+  order.status = status;
+  if (status === "shipped") order.shippedAt = new Date();
+  if (status === "delivered") order.deliveredAt = new Date();
+  order.statusHistory.push(
+    statusEvent(status, "admin", `Marked as ${status} by store staff`),
+  );
+  await order.save();
+  res.json(order);
 };
 
-// ──────────────────────────────────────────────
 // PUT /api/admin/orders/:id/shipping-address
-// Update shipping address
-// ──────────────────────────────────────────────
 exports.updateShippingAddress = async (req, res) => {
-  try {
-    const { address, city, state, zipcode, country } = req.body;
+  const order = await Order.findOneAndUpdate(
+    { _id: req.params.id, status: { $in: ["pending", "paid"] } },
+    { $set: { shippingAddress: req.body } },
+    { returnDocument: "after", runValidators: true },
+  );
 
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      {
-        $set: {
-          shippingAddress: { address, city, state, zipcode, country },
-        },
-      },
-      { new: true },
-    );
-
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    res.json({ message: "Shipping address updated", order });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  if (!order) {
+    return res.status(409).json({
+      message: "Shipping addresses can only be changed before an order ships",
+    });
   }
+
+  res.json({ message: "Shipping address updated", order });
 };
 
-// ──────────────────────────────────────────────
 // DELETE /api/admin/orders/:id
-// Cancel an order (soft delete)
-// ──────────────────────────────────────────────
 exports.cancelOrder = async (req, res) => {
-  try {
-    const order = await Order.findById(req.params.id);
+  const order = await Order.findById(req.params.id).select("status");
+  if (!order) return res.status(404).json({ message: "Order not found" });
 
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
-    }
-
-    if (order.status === "delivered" || order.status === "cancelled") {
-      return res.status(400).json({
-        message: `Cannot cancel an order with status: ${order.status}`,
-      });
-    }
-
-    order.status = "cancelled";
-    await order.save();
-
-    res.json({ message: "Order cancelled successfully", order });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
+  if (order.status !== "pending") {
+    return res.status(400).json({
+      message:
+        "Only unpaid checkout reservations can be cancelled here. Paid orders require a refund workflow.",
+    });
   }
+
+  const cancelled = await cancelPendingOrder(order._id, {
+    actor: "admin",
+    note: "Cancelled by store staff",
+  });
+  res.json({ message: "Checkout reservation cancelled and stock released", order: cancelled });
 };
 
-// ──────────────────────────────────────────────
 // GET /api/admin/orders/stats/summary
-// Get order statistics
-// ──────────────────────────────────────────────
-exports.getOrderStats = async (req, res) => {
-  try {
-    const [statusBreakdown, totalValue, avgValue] = await Promise.all([
-      Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
-      Order.aggregate([{ $group: { _id: null, total: { $sum: "$total" } } }]),
-      Order.aggregate([{ $group: { _id: null, avg: { $avg: "$total" } } }]),
-    ]);
+exports.getOrderStats = async (_req, res) => {
+  const paidMatch = { status: { $in: REVENUE_ORDER_STATUSES } };
+  const [statusBreakdown, paidValues] = await Promise.all([
+    Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
+    Order.aggregate([
+      { $match: paidMatch },
+      { $group: { _id: null, total: { $sum: "$total" }, avg: { $avg: "$total" } } },
+    ]),
+  ]);
 
-    const breakdown = {};
-    statusBreakdown.forEach((item) => {
-      breakdown[item._id] = item.count;
-    });
+  const breakdown = {};
+  statusBreakdown.forEach((item) => {
+    breakdown[item._id] = item.count;
+  });
 
-    res.json({
-      statusBreakdown: breakdown,
-      totalValue: totalValue[0]?.total || 0,
-      avgOrderValue: avgValue[0]?.avg || 0,
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
+  res.json({
+    statusBreakdown: breakdown,
+    totalValue: paidValues[0]?.total || 0,
+    avgOrderValue: paidValues[0]?.avg || 0,
+  });
 };

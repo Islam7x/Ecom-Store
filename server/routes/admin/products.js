@@ -24,6 +24,7 @@ const updateSchema = Joi.object({
   image: Joi.string().uri().allow("").optional(),
   category: Joi.string().trim().optional(),
   stock: Joi.number().integer().min(0).optional(),
+  isActive: Joi.boolean().optional(),
 }).min(1); // at least one field
 
 const stockSchema = Joi.object({
@@ -39,6 +40,7 @@ const bulkUpdateSchema = Joi.object({
     image: Joi.string().uri().allow("").optional(),
     category: Joi.string().trim().optional(),
     stock: Joi.number().integer().min(0).optional(),
+    isActive: Joi.boolean().optional(),
   }).min(1),
 });
 

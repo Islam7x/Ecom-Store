@@ -10,6 +10,8 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
+      trim: true,
+      lowercase: true,
       match: /^[^@\s]+@[^@\s]+\.[^@\s]+$/,
     },
 
@@ -21,6 +23,7 @@ const UserSchema = new mongoose.Schema(
       },
     },
     isAdmin: { type: Boolean, default: false },
+    tokenVersion: { type: Number, default: 0, select: false },
   },
   { timestamps: true },
 );

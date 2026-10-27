@@ -14,9 +14,12 @@ const protect = async (req, res, next) => {
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
+    req.user = await User.findById(decoded.id).select("-password +tokenVersion");
     if (!req.user) {
       return res.status(401).json({ message: 'User not found' });
+    }
+    if ((decoded.tv || 0) !== (req.user.tokenVersion || 0)) {
+      return res.status(401).json({ message: "Session is no longer valid" });
     }
     next();
   } catch {

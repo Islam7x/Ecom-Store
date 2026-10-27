@@ -1,15 +1,5 @@
 /**
- * Global notification utility for easy access
- * This helps maintain backward compatibility while using custom notifications
- *
- * Usage examples:
- *
- * // Replace alert with notifications
- * OLD: alert('Item added to cart');
- * NEW: notify.success('Item added to cart');
- *
- * OLD: alert('Error: Invalid email');
- * NEW: notify.error('Error: Invalid email');
+ * Map a notification context to a small helper API.
  */
 
 export const createNotificationHelpers = (notificationContext) => {

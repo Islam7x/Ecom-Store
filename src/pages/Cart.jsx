@@ -1,34 +1,47 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../context/CartContext";
 import { useDeliveryLocation } from "../context/LocationContext";
 import { useNotification } from "../hooks/useNotification";
 import DeliveryAddressCard from "../components/DeliveryAddressCard";
 import AddressFormModal from "../components/AddressFormModal";
-import { BASE_API_URL } from "../lib/api";
+import { API } from "../lib/api";
+import { formatMoney, productId } from "../lib/format";
+import { getCurrentUser } from "../lib/user";
 
 const Cart = () => {
   const [loading, setLoading] = React.useState(false);
+  const checkoutKeyRef = React.useRef(null);
   const [addressModalOpen, setAddressModalOpen] = React.useState(false);
   const notify = useNotification();
+  const navigate = useNavigate();
   const { cart, cartCount, addToCart, removeFromCart, deleteFromCart } =
     useCart();
   const { location, selectedAddress, calculateShipping } =
     useDeliveryLocation();
 
   const handleStripeCheckout = async () => {
+    if (!getCurrentUser()) {
+      notify.warning("Sign in to complete checkout.");
+      navigate("/login", { state: { from: "/cart" } });
+      return;
+    }
+
     setLoading(true);
     try {
-      const checkoutItems = cart.map((item) => ({
-        id: item._id ?? item.id,
-        quantity: item.quantity,
-      }));
+      if (!checkoutKeyRef.current) {
+        checkoutKeyRef.current =
+          globalThis.crypto?.randomUUID?.() ||
+          `checkout-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      }
 
-      const response = await fetch(`${BASE_API_URL}/api/checkout/session`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: checkoutItems,
+      const { data } = await API.post(
+        "/checkout/session",
+        {
+          items: cart.map((item) => ({
+            id: productId(item),
+            quantity: item.quantity,
+          })),
           location: {
             id: location.id,
             name: location.name,
@@ -47,30 +60,25 @@ const Cart = () => {
                 addressType: selectedAddress.addressType,
               }
             : undefined,
-        }),
-        credentials: "include",
-      });
+        },
+        { headers: { "Idempotency-Key": checkoutKeyRef.current } },
+      );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Server error:", response.status, errorData);
-        notify.error(
-          "Checkout failed: " + (errorData.message || "Unknown error"),
-        );
-        setLoading(false);
+      if (data?.url) {
+        window.location.href = data.url;
         return;
       }
 
-      const data = await response.json();
-
-      if (data.url) {
-        window.location.href = data.url;
-      } else {
-        console.error("No checkout URL received from server");
-        setLoading(false);
-      }
+      notify.error("Checkout did not return a payment URL.");
     } catch (err) {
-      console.error("Network/Code Error:", err);
+      checkoutKeyRef.current = null;
+      if (err.status === 401) {
+        notify.warning("Sign in to complete checkout.");
+        navigate("/login", { state: { from: "/cart" } });
+      } else {
+        notify.error(err.message || "Checkout failed");
+      }
+    } finally {
       setLoading(false);
     }
   };
@@ -83,7 +91,7 @@ const Cart = () => {
   const estimatedTax = subtotal * 0.08;
   const totalPrice = subtotal + shippingCost + estimatedTax;
   const shippingLabel =
-    shippingCost === 0 ? "Free" : `$${shippingCost.toFixed(2)}`;
+    shippingCost === 0 ? "Free" : formatMoney(shippingCost);
 
   if (cartCount === 0) {
     return (
@@ -371,29 +379,39 @@ const Cart = () => {
       <div className="grid grid-cols-1 items-start gap-10 lg:grid-cols-12">
         <section className="space-y-6 lg:col-span-8">
           {cart.map((item) => {
-            const itemId = item._id ?? item.id;
+            const itemId = productId(item);
+            const maxStock = Number.isFinite(Number(item.stock))
+              ? Number(item.stock)
+              : Infinity;
+            const atMax = item.quantity >= maxStock;
 
             return (
               <article
                 key={itemId}
                 className="ambient-card flex flex-col gap-6 rounded-2xl border border-[#f0ecf4] bg-white p-5 transition-all sm:flex-row"
               >
-                <div className="h-44 w-full overflow-hidden rounded-xl bg-[#f0ecf4] sm:w-44">
+                <Link
+                  to={`/product/${itemId}`}
+                  className="h-44 w-full overflow-hidden rounded-xl bg-[#f0ecf4] sm:w-44"
+                >
                   <img
                     src={item.image}
                     alt={item.name}
                     className="h-full w-full object-cover"
                   />
-                </div>
+                </Link>
 
                 <div className="flex flex-1 flex-col justify-between gap-6">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <h2 className="brand-heading text-2xl font-semibold text-[#1b1b21]">
+                      <Link
+                        to={`/product/${itemId}`}
+                        className="brand-heading text-2xl font-semibold text-[#1b1b21] hover:underline"
+                      >
                         {item.name}
-                      </h2>
+                      </Link>
                       <p className="mt-2 text-[#474651]">
-                        Premium Utility / Quantity {item.quantity}
+                        {item.category || "Marketplace"} · {formatMoney(item.price)} each
                       </p>
                     </div>
                     <button
@@ -418,14 +436,19 @@ const Cart = () => {
                       </span>
                       <button
                         onClick={() => addToCart(item)}
-                        className="flex cursor-pointer h-8 w-8 items-center justify-center rounded-full text-xl font-bold text-[#474651] transition hover:bg-white hover:text-[#1a146b]"
+                        disabled={atMax}
+                        className={`flex h-8 w-8 items-center justify-center rounded-full text-xl font-bold transition ${
+                          atMax
+                            ? "cursor-not-allowed text-[#c8c5d3]"
+                            : "cursor-pointer text-[#474651] hover:bg-white hover:text-[#1a146b]"
+                        }`}
                         aria-label={`Add one ${item.name}`}
                       >
                         +
                       </button>
                     </div>
                     <span className="brand-heading text-2xl font-semibold text-[#006b5f]">
-                      ${(Number(item.price) * item.quantity).toFixed(2)}
+                      {formatMoney(Number(item.price) * item.quantity)}
                     </span>
                   </div>
                 </div>
@@ -456,7 +479,7 @@ const Cart = () => {
             <div className="mt-6 space-y-4 text-[#474651]">
               <div className="flex justify-between">
                 <span>Subtotal</span>
-                <span>${subtotal.toFixed(2)}</span>
+                <span>{formatMoney(subtotal)}</span>
               </div>
               <div className="flex justify-between">
                 <span>
@@ -469,7 +492,7 @@ const Cart = () => {
               </div>
               {shippingCost > 0 && subtotal < location.freeShippingMin && (
                 <p className="text-sm text-[#006b5f]">
-                  Add ${(location.freeShippingMin - subtotal).toFixed(2)} more
+                  Add {formatMoney(location.freeShippingMin - subtotal)} more
                   for free shipping to {location.name}.
                 </p>
               )}
@@ -478,12 +501,12 @@ const Cart = () => {
               </p>
               <div className="flex justify-between">
                 <span>Estimated Tax</span>
-                <span>${estimatedTax.toFixed(2)}</span>
+                <span>{formatMoney(estimatedTax)}</span>
               </div>
               <div className="h-px bg-[#c8c5d3]" />
               <div className="brand-heading flex justify-between text-2xl font-semibold text-[#1a146b]">
                 <span>Total</span>
-                <span>${totalPrice.toFixed(2)}</span>
+                <span>{formatMoney(totalPrice)}</span>
               </div>
             </div>
 
@@ -503,7 +526,7 @@ const Cart = () => {
             </button>
 
             <p className="mt-4 text-sm text-[#777682]">
-              Secure checkout powered by your existing Stripe endpoint.
+              Secure checkout powered by Stripe. Sign in is required.
             </p>
           </div>
         </aside>

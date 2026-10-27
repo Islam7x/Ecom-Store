@@ -1,23 +1,23 @@
 /**
  * Transaction Helper Utilities
- * Provides wrapper functions for MongoDB transactions
- * Only use when multiple documents/collections must succeed or fail together
+ * Provides wrapper functions for MongoDB transactions with a safe fallback
+ * when the deployment does not support replica-set transactions (e.g. standalone dev DB).
  */
 
 const mongoose = require("mongoose");
 
+const TRANSACTION_UNSUPPORTED =
+  /retryable writes|Transaction numbers are only allowed|not support.*transaction/i;
+
+/** Build Mongoose options that include session only when one is active */
+const withSession = (session, extra = {}) =>
+  session ? { ...extra, session } : extra;
+
 /**
- * Execute a database operation within a transaction
- * @param {Function} operation - Async function containing the transaction logic
- * @returns {Promise<any>} - Result of the operation
- * @throws {Error} - If transaction fails or operation throws
+ * Execute a database operation within a transaction when supported.
+ * Falls back to sequential execution without a transaction on standalone MongoDB.
  *
- * Usage:
- *   const result = await withTransaction(async (session) => {
- *     await Order.create([{...}], { session });
- *     await Product.updateOne({...}, {...}, { session });
- *     return result;
- *   });
+ * @param {Function} operation - Async function receiving `(session|null)`
  */
 async function withTransaction(operation) {
   const session = await mongoose.startSession();
@@ -28,7 +28,15 @@ async function withTransaction(operation) {
     await session.commitTransaction();
     return result;
   } catch (error) {
-    await session.abortTransaction();
+    await session.abortTransaction().catch(() => {});
+
+    if (TRANSACTION_UNSUPPORTED.test(error.message)) {
+      console.warn(
+        "[transaction] Replica set unavailable — executing without transaction",
+      );
+      return operation(null);
+    }
+
     throw error;
   } finally {
     await session.endSession();
@@ -36,31 +44,21 @@ async function withTransaction(operation) {
 }
 
 /**
- * Execute multiple operations atomically
- * Useful for coordinating updates across different models
- * @param {Array<Function>} operations - Array of async functions
- * @returns {Promise<Array>} - Results from each operation
+ * Execute multiple operations atomically when transactions are supported.
+ * @param {Array<Function>} operations - Array of async functions receiving session
  */
 async function withTransactionMultiple(operations) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
+  return withTransaction(async (session) => {
     const results = [];
     for (const operation of operations) {
       results.push(await operation(session));
     }
-    await session.commitTransaction();
     return results;
-  } catch (error) {
-    await session.abortTransaction();
-    throw error;
-  } finally {
-    await session.endSession();
-  }
+  });
 }
 
 module.exports = {
   withTransaction,
   withTransactionMultiple,
+  withSession,
 };

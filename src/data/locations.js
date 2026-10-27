@@ -80,9 +80,9 @@ const GOVERNORATE_ALIASES = {
   "aswan governorate": "Aswan",
 };
 
-export const getLocationById = (id) =>
-  DELIVERY_LOCATIONS.find((loc) => loc.id === id) ??
-  DELIVERY_LOCATIONS.find((loc) => loc.id === DEFAULT_LOCATION_ID);
+export const getLocationById = (id, locations = DELIVERY_LOCATIONS) =>
+  locations.find((loc) => loc.id === id) ??
+  locations.find((loc) => loc.id === DEFAULT_LOCATION_ID);
 
 export const getShippingCost = (location, subtotal) => {
   if (!location) return 0;
@@ -104,11 +104,11 @@ const haversineKm = (lat1, lng1, lat2, lng2) => {
   return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-export const findNearestLocation = (lat, lng) => {
-  let nearest = DELIVERY_LOCATIONS[0];
+export const findNearestLocation = (lat, lng, locations = DELIVERY_LOCATIONS) => {
+  let nearest = locations[0];
   let minDistance = Infinity;
 
-  for (const loc of DELIVERY_LOCATIONS) {
+  for (const loc of locations) {
     const distance = haversineKm(lat, lng, loc.lat, loc.lng);
     if (distance < minDistance) {
       minDistance = distance;
@@ -131,23 +131,26 @@ export const resolveGovernorate = (value = "") => {
   return GOVERNORATE_ALIASES[normalized] ?? value;
 };
 
-export const matchLocationFromText = ({ cityArea = "", governorate = "" }) => {
+export const matchLocationFromText = (
+  { cityArea = "", governorate = "" },
+  locations = DELIVERY_LOCATIONS,
+) => {
   const cityNorm = normalizeText(cityArea);
   const govNorm = normalizeText(resolveGovernorate(governorate));
 
-  const byCity = DELIVERY_LOCATIONS.find(
+  const byCity = locations.find(
     (loc) =>
       cityNorm.includes(normalizeText(loc.name)) ||
       normalizeText(loc.name).includes(cityNorm),
   );
   if (byCity) return byCity;
 
-  const byGov = DELIVERY_LOCATIONS.find(
+  const byGov = locations.find(
     (loc) =>
       govNorm.includes(normalizeText(loc.governorate)) ||
       normalizeText(loc.governorate).includes(govNorm),
   );
   if (byGov) return byGov;
 
-  return getLocationById(DEFAULT_LOCATION_ID);
+  return getLocationById(DEFAULT_LOCATION_ID, locations);
 };

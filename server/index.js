@@ -1,4 +1,5 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
@@ -13,7 +14,10 @@ const { initSentry, flush: sentrylush } = require("./config/sentry");
 const connectDB = require("./config/db");
 const errorHandler = require("./middleware/errorHandler");
 const { isRedisConnected } = require("./middleware/cache");
+const { releaseExpiredReservations } = require("./lib/orderLifecycle");
 const { metricsEndpoint } = require("./middleware/validationLogger");
+const { protect } = require("./middleware/auth");
+const requireAdmin = require("./middleware/admin");
 const {
   healthCheckMiddleware,
   deepHealthCheck,
@@ -27,13 +31,17 @@ const checkoutRoutes = require("./routes/checkout");
 const webhookRoutes = require("./routes/webhook");
 const orderRoutes = require("./routes/orders");
 const addressRoutes = require("./routes/addresses");
+const locationRoutes = require("./routes/locations");
 const adminProductRoutes = require("./routes/admin/products");
 const adminOrderRoutes = require("./routes/admin/orders");
 const adminDashboardRoutes = require("./routes/admin/dashboard");
 const adminUserRoutes = require("./routes/admin/users");
 
 // ── Validate required env vars ───────────────
-const required = ["JWT_SECRET", "MONGO_URI", "STRIPE_SECRET_KEY"];
+const required = ["JWT_SECRET", "STRIPE_SECRET_KEY"];
+if (process.env.NODE_ENV === "production") {
+  required.push("MONGO_URI", "STRIPE_WEBHOOK_SECRET");
+}
 for (const key of required) {
   if (!process.env[key]) {
     console.error(`FATAL: ${key} environment variable is not set.`);
@@ -100,10 +108,7 @@ if (process.env.NODE_ENV !== "test") {
 app.get("/health", healthCheckMiddleware);
 
 // ── Deep health check (for monitoring dashboards) ──
-app.get("/api/admin/health/deep", async (req, res) => {
-  // Optional: Add authentication check
-  // const token = req.cookies.token;
-  // if (!token) return res.status(401).json({ message: "Unauthorized" });
+app.get("/api/admin/health/deep", protect, requireAdmin, async (req, res) => {
   try {
     const result = await deepHealthCheck();
     res.status(result.status === "healthy" ? 200 : 503).json(result);
@@ -113,12 +118,14 @@ app.get("/api/admin/health/deep", async (req, res) => {
 });
 
 // ── Validation metrics endpoint (admin only) ──
-app.get("/api/admin/metrics/validation", (req, res, _next) => {
-  // Optional: Add authentication check
-  // const token = req.cookies.token;
-  // if (!token) return res.status(401).json({ message: "Unauthorized" });
-  metricsEndpoint(req, res);
-});
+app.get(
+  "/api/admin/metrics/validation",
+  protect,
+  requireAdmin,
+  (req, res, _next) => {
+    metricsEndpoint(req, res);
+  },
+);
 
 // ── API routes ───────────────────────────────
 app.use("/api/auth", authRoutes);
@@ -126,6 +133,7 @@ app.use("/api/products", productRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/addresses", addressRoutes);
+app.use("/api/locations", locationRoutes);
 
 // ── Admin routes ─────────────────────────────
 app.use("/api/admin/products", adminProductRoutes);
@@ -141,13 +149,30 @@ app.post("/create-checkout-session", (req, res, next) => {
 });
 
 // ── Global error handler (must be last) ──────
+app.use((_req, res) => {
+  res.status(404).json({ message: "Route not found" });
+});
 app.use(errorHandler);
 
 // ── Start server ─────────────────────────────
 const PORT = process.env.PORT || 5000;
 
+let reservationCleanupTimer;
+
 if (process.env.NODE_ENV !== "test") {
   connectDB().then(() => {
+    const releaseExpired = () =>
+      releaseExpiredReservations().catch((error) => {
+        console.error(
+          "Failed to release expired checkout reservations:",
+          error.message,
+        );
+      });
+
+    releaseExpired();
+    reservationCleanupTimer = setInterval(releaseExpired, 5 * 60 * 1000);
+    reservationCleanupTimer.unref();
+
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
       console.log(`   Environment: ${process.env.NODE_ENV || "development"}`);
@@ -161,6 +186,8 @@ if (process.env.NODE_ENV !== "test") {
 // ── Graceful shutdown ────────────────────────
 const shutdown = async (signal) => {
   console.log(`\n${signal} received — shutting down gracefully…`);
+
+  if (reservationCleanupTimer) clearInterval(reservationCleanupTimer);
 
   // Flush Sentry events
   await sentrylush(2000).catch(() => {});

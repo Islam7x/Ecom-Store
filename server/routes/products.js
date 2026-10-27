@@ -1,6 +1,7 @@
 // server/routes/products.js
 const express = require("express");
 const ctrl = require("../controllers/productController");
+const asyncHandler = require("../middleware/asyncHandler");
 const { cacheMiddleware } = require("../middleware/cache");
 
 const router = express.Router();
@@ -14,14 +15,14 @@ router.get(
     const cacheKey = `products:list:${queryKey}`;
     cacheMiddleware(cacheKey, 300)(req, res, next);
   },
-  ctrl.getProducts,
+  asyncHandler(ctrl.getProducts),
 );
 
 // Cache categories for 1 hour (3600 seconds)
 router.get(
   "/categories",
   (req, res, next) => cacheMiddleware("products:categories", 3600)(req, res, next),
-  ctrl.getCategories
+  asyncHandler(ctrl.getCategories),
 );
 
 // Cache individual product for 10 minutes (600 seconds)
@@ -31,7 +32,7 @@ router.get(
     const cacheKey = `products:${req.params.id}`;
     cacheMiddleware(cacheKey, 600)(req, res, next);
   },
-  ctrl.getProductById,
+  asyncHandler(ctrl.getProductById),
 );
 
 module.exports = router;

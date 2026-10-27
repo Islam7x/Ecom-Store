@@ -2,6 +2,7 @@
 const express = require("express");
 const Joi = require("joi");
 const validate = require("../middleware/validate");
+const asyncHandler = require("../middleware/asyncHandler");
 const { protect } = require("../middleware/auth");
 const ctrl = require("../controllers/checkoutController");
 
@@ -11,11 +12,12 @@ const checkoutSchema = Joi.object({
   items: Joi.array()
     .items(
       Joi.object({
-        id: Joi.string().required(),
-        quantity: Joi.number().integer().min(1).required(),
+        id: Joi.string().hex().length(24).required(),
+        quantity: Joi.number().integer().min(1).max(100).required(),
       })
     )
     .min(1)
+    .max(50)
     .required(),
   location: Joi.object({
     id: Joi.string().required(),
@@ -39,7 +41,7 @@ router.post(
   "/session",
   protect,
   validate(checkoutSchema),
-  ctrl.createCheckoutSession
+  asyncHandler(ctrl.createCheckoutSession),
 );
 
 module.exports = router;

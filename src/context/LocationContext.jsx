@@ -7,10 +7,11 @@ import {
 } from "react";
 import {
   DEFAULT_LOCATION_ID,
+  fetchDeliveryLocations,
   getLocationById,
   getShippingCost,
   matchLocationFromText,
-} from "../data/locations";
+} from "../lib/locations";
 import { safeDetectDeliveryLocation } from "../lib/geolocation";
 
 const LOCATION_KEY = "deliveryLocation";
@@ -33,9 +34,11 @@ const createAddressId = () =>
   globalThis.crypto?.randomUUID?.() ?? `addr-${Date.now()}`;
 
 export const LocationProvider = ({ children }) => {
+  const [locations, setLocations] = useState([]);
+  const [locationsReady, setLocationsReady] = useState(false);
   const [locationId, setLocationId] = useState(() => {
     const stored = localStorage.getItem(LOCATION_KEY);
-    return stored && getLocationById(stored) ? stored : DEFAULT_LOCATION_ID;
+    return stored || DEFAULT_LOCATION_ID;
   });
   const [addresses, setAddresses] = useState(loadAddresses);
   const [selectedAddressId, setSelectedAddressId] = useState(
@@ -45,9 +48,25 @@ export const LocationProvider = ({ children }) => {
   const [geoError, setGeoError] = useState(null);
   const [geoSuggestedAddress, setGeoSuggestedAddress] = useState(null);
 
-  const location = getLocationById(locationId);
+  const fallbackLocation =
+    getLocationById(DEFAULT_LOCATION_ID, locations) ??
+    getLocationById(DEFAULT_LOCATION_ID);
+
+  const location =
+    getLocationById(locationId, locations) ?? fallbackLocation;
   const selectedAddress =
     addresses.find((address) => address.id === selectedAddressId) ?? null;
+
+  useEffect(() => {
+    fetchDeliveryLocations()
+      .then((data) => {
+        setLocations(data);
+        setLocationId((currentId) =>
+          getLocationById(currentId, data) ? currentId : DEFAULT_LOCATION_ID,
+        );
+      })
+      .finally(() => setLocationsReady(true));
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(LOCATION_KEY, locationId);
@@ -66,11 +85,14 @@ export const LocationProvider = ({ children }) => {
     }
   }, [selectedAddressId]);
 
-  const setLocation = useCallback((id) => {
-    if (getLocationById(id)) {
-      setLocationId(id);
-    }
-  }, []);
+  const setLocation = useCallback(
+    (id) => {
+      if (getLocationById(id, locations)) {
+        setLocationId(id);
+      }
+    },
+    [locations],
+  );
 
   const detectLocation = useCallback(async () => {
     setGeoDetecting(true);
@@ -103,10 +125,13 @@ export const LocationProvider = ({ children }) => {
   }, [addresses.length, detectLocation]);
 
   const addAddress = useCallback((addressInput) => {
-    const matchedLocation = matchLocationFromText({
-      cityArea: addressInput.cityArea,
-      governorate: addressInput.governorate,
-    });
+    const matchedLocation = matchLocationFromText(
+      {
+        cityArea: addressInput.cityArea,
+        governorate: addressInput.governorate,
+      },
+      locations,
+    );
 
     const newAddress = {
       id: createAddressId(),
@@ -137,7 +162,7 @@ export const LocationProvider = ({ children }) => {
     setGeoSuggestedAddress(null);
 
     return newAddress;
-  }, []);
+  }, [locations]);
 
   const selectAddress = useCallback(
     (id) => {
@@ -159,6 +184,8 @@ export const LocationProvider = ({ children }) => {
       value={{
         location,
         locationId,
+        locations,
+        locationsReady,
         setLocation,
         addresses,
         selectedAddress,

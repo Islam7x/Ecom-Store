@@ -2,6 +2,7 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { verifyGoogleIdToken } = require("../lib/googleIdToken");
 
 // Resolved once at module load — auth middleware guarantees JWT_SECRET exists
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -16,10 +17,15 @@ const cookieOptions = {
 };
 
 /** Helper: sign JWT and attach as httpOnly cookie */
-const sendTokenResponse = (res, user) => {
-  const token = jwt.sign({ id: user._id }, JWT_SECRET, { expiresIn: "30d" });
+const sendTokenResponse = (res, user, extra = {}) => {
+  const token = jwt.sign(
+    { id: user._id, tv: user.tokenVersion || 0 },
+    JWT_SECRET,
+    { expiresIn: "30d" },
+  );
 
   res.cookie("token", token, cookieOptions).json({
+    ...extra,
     _id: user._id,
     email: user.email,
     name: user.name,
@@ -32,7 +38,8 @@ const sendTokenResponse = (res, user) => {
 // POST /api/auth/register
 // ──────────────────────────────────────────────
 exports.register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, password } = req.body;
+  const email = req.body.email.toLowerCase();
 
   const existing = await User.findOne({ email });
   if (existing) {
@@ -47,9 +54,10 @@ exports.register = async (req, res) => {
 // POST /api/auth/login
 // ──────────────────────────────────────────────
 exports.login = async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = req.body.email.toLowerCase();
 
-  const user = await User.findOne({ email }).select("+password");
+  const user = await User.findOne({ email }).select("+password +tokenVersion");
   if (!user || !user.password) {
     return res.status(401).json({ message: "Invalid email or password" });
   }
@@ -66,7 +74,9 @@ exports.login = async (req, res) => {
 // POST /api/auth/google
 // ──────────────────────────────────────────────
 exports.googleAuth = async (req, res) => {
-  const { googleId, email, name, picture } = req.body;
+  const { googleId, email, name, picture } = await verifyGoogleIdToken(
+    req.body.credential,
+  );
 
   let user = await User.findOne({ googleId });
   if (!user) {
@@ -108,7 +118,13 @@ exports.logout = (_req, res) => {
 // GET /api/auth/me
 // ──────────────────────────────────────────────
 exports.getMe = (req, res) => {
-  res.json(req.user);
+  res.json({
+    _id: req.user._id,
+    email: req.user.email,
+    name: req.user.name,
+    picture: req.user.picture,
+    isAdmin: req.user.isAdmin,
+  });
 };
 
 // ──────────────────────────────────────────────
@@ -159,6 +175,7 @@ exports.changePassword = async (req, res) => {
   }
 
   user.password = newPassword; // pre-save hook will hash it
+  user.tokenVersion = (user.tokenVersion || 0) + 1;
   await user.save();
-  res.json({ message: "Password updated successfully" });
+  sendTokenResponse(res, user, { message: "Password updated successfully" });
 };

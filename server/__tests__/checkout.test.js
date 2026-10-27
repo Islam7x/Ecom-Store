@@ -76,7 +76,10 @@ describe("Checkout Endpoints", () => {
     expect(order.status).toBe("pending");
     expect(order.items[0].quantity).toBe(2);
     expect(order.shippingCost).toBe(3.99); // Shipping to Giza
-    expect(order.total).toBe(63.99); // 60 subtotal + 3.99 shipping
+    expect(order.tax).toBe(4.8); // Default 8% tax on $60 subtotal
+    expect(order.total).toBe(68.79); // 60 subtotal + 3.99 shipping + 4.80 tax
+    expect(order.reservationExpiresAt).toBeDefined();
+    expect(order.statusHistory[0]).toMatchObject({ status: "pending" });
   });
 
   test("POST /api/checkout/session -> Should fail if stock is insufficient", async () => {
@@ -93,5 +96,31 @@ describe("Checkout Endpoints", () => {
     // Stock should not have changed
     const unchangedProd = await Product.findById(testProduct._id);
     expect(unchangedProd.stock).toBe(5);
+  });
+
+  test("POST /api/checkout/session -> Should reuse an idempotent checkout without reserving stock twice", async () => {
+    const requestBody = {
+      items: [{ id: testProduct._id.toString(), quantity: 2 }],
+      location: { id: "giza", name: "Giza", governorate: "Giza" },
+    };
+    const checkoutKey = "checkout-retry-key-0001";
+
+    const first = await request(app)
+      .post("/api/checkout/session")
+      .set("Cookie", userCookie)
+      .set("Idempotency-Key", checkoutKey)
+      .send(requestBody)
+      .expect(200);
+
+    const second = await request(app)
+      .post("/api/checkout/session")
+      .set("Cookie", userCookie)
+      .set("Idempotency-Key", checkoutKey)
+      .send(requestBody)
+      .expect(200);
+
+    expect(second.body).toMatchObject({ url: first.body.url, reused: true });
+    expect(await Order.countDocuments()).toBe(1);
+    expect((await Product.findById(testProduct._id)).stock).toBe(3);
   });
 });

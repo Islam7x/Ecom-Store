@@ -1,115 +1,96 @@
-import { createElement } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import {
-  Calendar,
-  CreditCard,
-  Gift,
   Headphones,
+  Heart,
   HelpCircle,
-  Home,
-  List,
-  MessageSquare,
   Package,
-  Shield,
-  Smartphone,
-  Star,
+  ShoppingCart,
+  Truck,
 } from "lucide-react";
+import { clearUser, getCurrentUser } from "../lib/user";
 
 const accountCards = [
   {
     title: "Your Orders",
-    description: "Track, return, cancel an order, download invoice or buy again",
-    icon: Package,
+    description: "Track deliveries and review past purchases",
+    icon: <Package className="h-7 w-7" strokeWidth={2.2} />,
     to: "/orders",
   },
   {
-    title: "Login & security",
-    description: "Manage password, email, mobile number, and security settings",
-    icon: Shield,
-    to: "#",
+    title: "Shopping Cart",
+    description: "Review items and continue to checkout",
+    icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.2} />,
+    to: "/cart",
   },
   {
-    title: "Prime",
-    description: "Manage your membership, view benefits and payment settings",
-    icon: Star,
-    to: "#",
+    title: "Wishlist",
+    description: "Items you saved for later",
+    icon: <Heart className="h-7 w-7" strokeWidth={2.2} />,
+    to: "/wishlist",
   },
   {
-    title: "Gift cards",
-    description: "View balance or redeem a card",
-    icon: Gift,
-    to: "#",
+    title: "Shipping",
+    description: "Delivery times and free-shipping thresholds",
+    icon: <Truck className="h-7 w-7" strokeWidth={2.2} />,
+    to: "/help/shipping",
   },
   {
-    title: "Your Payments",
-    description: "Manage or add payment methods and view transactions",
-    icon: CreditCard,
-    to: "#",
+    title: "Returns",
+    description: "How to send an item back",
+    icon: <HelpCircle className="h-7 w-7" strokeWidth={2.2} />,
+    to: "/help/returns",
   },
   {
-    title: "Pre-Order Questions",
-    description: "Learn more about refund, cash on delivery and warranty",
-    icon: HelpCircle,
-    to: "#",
-  },
-  {
-    title: "Your Messages",
-    description: "View or respond to messages from sellers and support",
-    icon: MessageSquare,
-    to: "#",
-  },
-  {
-    title: "Your Addresses",
-    description: "Edit, remove or set default address",
-    icon: Home,
-    to: "#",
-  },
-  {
-    title: "Installment plan",
-    description: "View installment plans offered",
-    icon: Calendar,
-    to: "#",
-  },
-  {
-    title: "LUXE Mobile App",
-    description: "Download the mobile app",
-    icon: Smartphone,
-    to: "#",
-  },
-  {
-    title: "Your Lists",
-    description: "View, modify and share your lists or create new ones",
-    icon: List,
-    to: "#",
-  },
-  {
-    title: "Contact Us",
-    description: "Browse self service options, help articles or contact us",
-    icon: Headphones,
-    to: "#",
+    title: "Contact support",
+    description: "Get help with an order or account issue",
+    icon: <Headphones className="h-7 w-7" strokeWidth={2.2} />,
+    to: "/help/contact",
   },
 ];
 
 const Account = () => {
+  const navigate = useNavigate();
+  const user = getCurrentUser();
+
+  if (!user) {
+    return <Navigate to="/login" state={{ from: "/account" }} replace />;
+  }
+
+  const handleLogout = async () => {
+    await clearUser();
+    navigate("/");
+  };
+
   return (
     <main className="bg-white py-10 sm:py-12">
       <section className="mx-auto w-full max-w-5xl px-4 sm:px-6">
-        <h1 className="mb-5 text-2xl font-bold leading-tight text-[#111827]">
-          Your Account
-        </h1>
+        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold leading-tight text-[#111827]">
+              Your Account
+            </h1>
+            <p className="mt-1 text-sm text-[#474651]">
+              Signed in as {user.name || user.email}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="rounded-lg border border-[#ba1a1a]/30 px-4 py-2 text-sm font-semibold text-[#ba1a1a] hover:bg-[#ffdad6]/40"
+          >
+            Sign out
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {accountCards.map(({ title, description, icon, to }) => (
             <Link
               key={title}
               to={to}
-              className="group flex min-h-24 items-center gap-4 rounded border border-[#d5d9d9] bg-white px-5 py-4 text-left transition hover:bg-[#f7fafa] hover:border-[#8a9696] hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-[#007185] focus:ring-offset-2"
+              className="group flex min-h-24 items-center gap-4 rounded border border-[#d5d9d9] bg-white px-5 py-4 text-left transition hover:bg-[#f7fafa] hover:border-[#8a9696] hover:shadow-sm"
             >
-              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#b8eef0] text-[#0f5f66] transition group-hover:bg-[#a7e4e7]">
-                {createElement(icon, {
-                  className: "h-7 w-7",
-                  strokeWidth: 2.2,
-                })}
+              <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#e2dfff] text-[#1a146b]">
+                {icon}
               </span>
               <span className="min-w-0">
                 <span className="block text-sm font-bold leading-5 text-[#111827]">

@@ -2,6 +2,7 @@
 const Order = require("../../models/Order");
 const Product = require("../../models/Product");
 const User = require("../../models/User");
+const { REVENUE_ORDER_STATUSES } = require("../../lib/orderLifecycle");
 
 /**
  * GET /api/admin/dashboard/stats
@@ -9,6 +10,7 @@ const User = require("../../models/User");
  */
 exports.getDashboardStats = async (req, res) => {
   try {
+    const revenueMatch = { status: { $in: REVENUE_ORDER_STATUSES } };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -30,19 +32,25 @@ exports.getDashboardStats = async (req, res) => {
       lowStockProducts,
       recentOrders,
     ] = await Promise.all([
-      Order.countDocuments(),
-      Order.aggregate([{ $group: { _id: null, total: { $sum: "$total" } } }]),
+      Order.countDocuments(revenueMatch),
+      Order.aggregate([
+        { $match: revenueMatch },
+        { $group: { _id: null, total: { $sum: "$total" } } },
+      ]),
       Product.countDocuments(),
       User.countDocuments({ isAdmin: false }),
       User.countDocuments({ isAdmin: true }),
-      Order.countDocuments({ createdAt: { $gte: today } }),
+      Order.countDocuments({ ...revenueMatch, createdAt: { $gte: today } }),
       Order.aggregate([
-        { $match: { createdAt: { $gte: today } } },
+        { $match: { ...revenueMatch, createdAt: { $gte: today } } },
         { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
-      Order.countDocuments({ createdAt: { $gte: thirtyDaysAgo } }),
+      Order.countDocuments({
+        ...revenueMatch,
+        createdAt: { $gte: thirtyDaysAgo },
+      }),
       Order.aggregate([
-        { $match: { createdAt: { $gte: thirtyDaysAgo } } },
+        { $match: { ...revenueMatch, createdAt: { $gte: thirtyDaysAgo } } },
         { $group: { _id: null, total: { $sum: "$total" } } },
       ]),
       Order.aggregate([{ $group: { _id: "$status", count: { $sum: 1 } } }]),
@@ -140,7 +148,12 @@ exports.getSalesAnalytics = async (req, res) => {
     }
 
     const salesData = await Order.aggregate([
-      { $match: { createdAt: { $gte: dateFilter } } },
+      {
+        $match: {
+          status: { $in: REVENUE_ORDER_STATUSES },
+          createdAt: { $gte: dateFilter },
+        },
+      },
       {
         $group: {
           _id: {
@@ -171,10 +184,11 @@ exports.getTopProducts = async (req, res) => {
     const { limit = 10 } = req.query;
 
     const topProducts = await Order.aggregate([
+      { $match: { status: { $in: REVENUE_ORDER_STATUSES } } },
       { $unwind: "$items" },
       {
         $group: {
-          _id: "$items.productId",
+          _id: "$items.product",
           totalSold: { $sum: "$items.quantity" },
           totalRevenue: {
             $sum: { $multiply: ["$items.quantity", "$items.price"] },

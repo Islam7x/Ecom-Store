@@ -1,14 +1,25 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { BASE_API_URL } from "../lib/api";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { API } from "../lib/api";
 import { useCart } from "../context/CartContext";
-import { ChevronLeft, Star, Truck, Shield, RotateCcw } from "lucide-react";
+import { useWishlist } from "../context/WishlistContext";
+import {
+  formatMoney,
+  PLACEHOLDER_IMAGE,
+  productId,
+} from "../lib/format";
+import { categoryToSlug } from "../lib/categories";
+import { parseProductsResponse } from "../lib/products";
+import ProductCard from "../components/ProductCard";
+import { ChevronLeft, Heart, RotateCcw, Shield, Truck } from "lucide-react";
 
 const ProductDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { addToCart } = useCart();
+  const { isInWishlist, toggleWishlist } = useWishlist();
   const [product, setProduct] = useState(null);
+  const [related, setRelated] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [quantity, setQuantity] = useState(1);
@@ -17,38 +28,36 @@ const ProductDetails = () => {
     const fetchProduct = async () => {
       try {
         setLoading(true);
-        const response = await fetch(`${BASE_API_URL}/api/products/${id}`);
-
-        if (!response.ok) {
-          throw new Error("Product not found");
-        }
-
-        const data = await response.json();
+        const { data } = await API.get(`/products/${id}`);
         setProduct(data);
+        setQuantity(1);
         setError(null);
+
+        if (data?.category) {
+          const relatedResponse = await API.get("/products", {
+            params: { category: data.category, limit: 8, page: 1 },
+          });
+          const parsed = parseProductsResponse(relatedResponse.data);
+          setRelated(
+            parsed.products.filter((item) => productId(item) !== productId(data)),
+          );
+        } else {
+          setRelated([]);
+        }
       } catch (err) {
-        console.error("Error fetching product:", err);
-        setError(err.message);
+        setError(err.message || "Product not found");
+        setProduct(null);
       } finally {
         setLoading(false);
       }
     };
 
-    if (id) {
-      fetchProduct();
-    }
+    if (id) fetchProduct();
   }, [id]);
 
   if (loading) {
     return (
       <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-10">
-        <button
-          onClick={() => navigate(-1)}
-          className="mb-8 flex items-center gap-2 text-[#1a146b] hover:text-[#006b5f] transition"
-        >
-          <ChevronLeft size={20} />
-          Back
-        </button>
         <div className="grid gap-8 md:grid-cols-2">
           <div className="aspect-square rounded-2xl bg-gray-200 animate-pulse" />
           <div className="space-y-4">
@@ -71,8 +80,8 @@ const ProductDetails = () => {
           <ChevronLeft size={20} />
           Back
         </button>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center dark:border-red-900 dark:bg-red-900/20">
-          <p className="text-lg font-semibold text-red-800 dark:text-red-300">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-8 text-center">
+          <p className="text-lg font-semibold text-red-800">
             {error || "Product not found"}
           </p>
         </div>
@@ -80,113 +89,101 @@ const ProductDetails = () => {
     );
   }
 
-  const currentStock = product.stock ?? 3;
+  const currentStock = Number.isFinite(Number(product.stock))
+    ? Number(product.stock)
+    : 0;
   const isSoldOut = currentStock <= 0;
+  const saved = isInWishlist(product);
 
   const handleAddToCart = () => {
-    for (let i = 0; i < quantity; i++) {
-      addToCart(product);
-    }
+    addToCart(product, quantity);
     setQuantity(1);
   };
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-10">
-      {/* Back Button */}
-      <button
-        onClick={() => navigate(-1)}
-        className="mb-8 flex items-center gap-2 text-[#1a146b] hover:text-[#006b5f] transition font-semibold"
-      >
-        <ChevronLeft size={20} />
-        Back
-      </button>
-
-      <div className="grid gap-8 md:grid-cols-2">
-        {/* Product Image */}
-        <div className="flex items-start justify-start">
-          <div
-            className={`relative w-80 h-80 aspect-square rounded-2xl bg-[#f0ecf4] overflow-hidden ${
-              isSoldOut ? "opacity-70" : ""
-            }`}
+      <div className="mb-8 flex flex-wrap items-center gap-3 text-sm text-[#777682]">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex items-center gap-1 font-semibold text-[#1a146b] hover:text-[#006b5f]"
+        >
+          <ChevronLeft size={18} />
+          Back
+        </button>
+        <span>/</span>
+        {product.category && (
+          <Link
+            to={`/category/${categoryToSlug(product.category)}`}
+            className="hover:text-[#1a146b]"
           >
-            <img
-              src={product.image}
-              alt={product.name}
-              className="h-full w-full object-cover"
-            />
-            {isSoldOut && (
-              <div className="absolute inset-0 flex items-center justify-center bg-[#1a146b]/45 backdrop-blur-[2px]">
-                <span className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-wider text-[#1b1b21] shadow-xl">
-                  Sold Out
-                </span>
-              </div>
-            )}
-          </div>
+            {product.category}
+          </Link>
+        )}
+      </div>
+
+      <div className="grid gap-10 md:grid-cols-2">
+        <div
+          className={`relative aspect-square overflow-hidden rounded-2xl bg-[#f0ecf4] ${
+            isSoldOut ? "opacity-70" : ""
+          }`}
+        >
+          <img
+            src={product.image || PLACEHOLDER_IMAGE}
+            alt={product.name}
+            className="h-full w-full object-cover"
+            onError={(event) => {
+              event.currentTarget.src = PLACEHOLDER_IMAGE;
+            }}
+          />
+          {isSoldOut && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#1a146b]/45 backdrop-blur-[2px]">
+              <span className="rounded-full bg-white px-4 py-2 text-xs font-black uppercase tracking-wider text-[#1b1b21] shadow-xl">
+                Sold Out
+              </span>
+            </div>
+          )}
         </div>
 
-        {/* Product Info */}
         <div className="flex flex-col">
-          <div className="mb-6">
-            <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#777682]">
-              Premium Utility
-            </p>
-            <h1 className="brand-heading text-4xl font-bold text-[#1b1b21] mb-4">
-              {product.name}
-            </h1>
+          <p className="mb-2 text-xs font-bold uppercase tracking-widest text-[#777682]">
+            {product.category || "Marketplace"}
+          </p>
+          <h1 className="brand-heading text-4xl font-bold text-[#1b1b21] mb-4">
+            {product.name}
+          </h1>
 
-            {/* Rating */}
-            <div className="flex items-center gap-2 mb-6">
-              <div className="flex gap-1">
-                {[...Array(5)].map((_, i) => (
-                  <Star
-                    key={i}
-                    size={16}
-                    className="fill-yellow-400 text-yellow-400"
-                  />
-                ))}
-              </div>
-              <span className="text-sm text-[#777682]">(128 reviews)</span>
-            </div>
-
-            {/* Price */}
-            <div className="mb-6 pb-6 border-b border-gray-200">
-              <span className="brand-heading text-4xl font-bold text-[#1a146b]">
-                ${Number(product.price).toFixed(2)}
-              </span>
-              {product.originalPrice && (
-                <span className="ml-4 text-lg text-[#777682] line-through">
-                  ${Number(product.originalPrice).toFixed(2)}
-                </span>
-              )}
-            </div>
+          <div className="mb-6 pb-6 border-b border-gray-200">
+            <span className="brand-heading text-4xl font-bold text-[#1a146b]">
+              {formatMoney(product.price)}
+            </span>
           </div>
 
-          {/* Description */}
           <div className="mb-8">
             <h3 className="font-semibold text-[#1b1b21] mb-3">Description</h3>
             <p className="text-[#474651] leading-relaxed">
               {product.description ||
-                "Premium quality product designed for excellence and durability. Perfect for your everyday needs."}
+                "A carefully selected item from the LUXE catalog. Check stock and add it to your bag when you are ready."}
             </p>
           </div>
 
-          {/* Stock Status */}
-          <div className="mb-8">
-            <p className="text-sm font-semibold text-[#1b1b21] mb-2">
-              Stock Available:
-            </p>
-            <p
-              className={`text-lg font-bold ${
-                currentStock > 5 ? "text-green-600" : "text-orange-600"
-              }`}
-            >
-              {isSoldOut ? "Out of Stock" : `${currentStock} items`}
-            </p>
-          </div>
+          <p
+            className={`mb-8 text-sm font-bold ${
+              isSoldOut
+                ? "text-[#ba1a1a]"
+                : currentStock > 5
+                  ? "text-green-700"
+                  : "text-orange-600"
+            }`}
+          >
+            {isSoldOut
+              ? "Out of stock"
+              : currentStock <= 5
+                ? `Only ${currentStock} left`
+                : "In stock"}
+          </p>
 
-          {/* Add to Cart */}
           {!isSoldOut && (
-            <div className="mb-8 flex items-center gap-4">
+            <div className="mb-6 flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-3 rounded-lg border border-[#c8c5d3] bg-[#f6f2fa] px-4 py-3">
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -213,7 +210,7 @@ const ProductDetails = () => {
               </div>
               <button
                 onClick={handleAddToCart}
-                className="flex-1 rounded-lg bg-[#1a146b] px-6 py-3 text-white font-bold hover:bg-[#13104f] transition active:scale-95"
+                className="flex-1 min-w-40 rounded-lg bg-[#1a146b] px-6 py-3 text-white font-bold hover:bg-[#13104f] transition active:scale-95"
               >
                 Add to Cart
               </button>
@@ -223,19 +220,32 @@ const ProductDetails = () => {
           {isSoldOut && (
             <button
               disabled
-              className="w-full rounded-lg bg-[#777682] px-6 py-3 text-white font-bold cursor-not-allowed mb-8"
+              className="w-full rounded-lg bg-[#777682] px-6 py-3 text-white font-bold cursor-not-allowed mb-6"
             >
               Out of Stock
             </button>
           )}
 
-          {/* Features */}
+          <button
+            type="button"
+            onClick={() => toggleWishlist(product)}
+            className="mb-8 inline-flex w-fit items-center gap-2 text-sm font-semibold text-[#474651] hover:text-[#ba1a1a]"
+          >
+            <Heart
+              size={18}
+              className={saved ? "fill-[#ba1a1a] text-[#ba1a1a]" : ""}
+            />
+            {saved ? "Saved to wishlist" : "Save for later"}
+          </button>
+
           <div className="space-y-4 border-t border-gray-200 pt-8">
             <div className="flex gap-4">
               <Truck size={24} className="text-[#006b5f] shrink-0" />
               <div>
                 <h4 className="font-semibold text-[#1b1b21]">Free Shipping</h4>
-                <p className="text-sm text-[#474651]">On orders over $50</p>
+                <p className="text-sm text-[#474651]">
+                  On qualifying orders in your delivery area
+                </p>
               </div>
             </div>
             <div className="flex gap-4">
@@ -245,7 +255,7 @@ const ProductDetails = () => {
                   Secure Checkout
                 </h4>
                 <p className="text-sm text-[#474651]">
-                  Your payment is safe and secure
+                  Card payments are processed by Stripe
                 </p>
               </div>
             </div>
@@ -254,13 +264,26 @@ const ProductDetails = () => {
               <div>
                 <h4 className="font-semibold text-[#1b1b21]">30-Day Returns</h4>
                 <p className="text-sm text-[#474651]">
-                  Not satisfied? Easy returns
+                  Unused items can be returned through support
                 </p>
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {related.length > 0 && (
+        <section className="mt-16">
+          <h2 className="brand-heading text-2xl font-semibold text-[#1b1b21] mb-6">
+            More in {product.category}
+          </h2>
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {related.slice(0, 4).map((item) => (
+              <ProductCard key={productId(item)} product={item} />
+            ))}
+          </div>
+        </section>
+      )}
     </main>
   );
 };

@@ -1,34 +1,31 @@
 // server/__tests__/setup.js
 const mongoose = require("mongoose");
-const { MongoMemoryServer } = require("mongodb-memory-server");
+const { MongoMemoryReplSet } = require("mongodb-memory-server");
 
-let mongoServer;
+let replSet;
 
-// Start memory database and connect mongoose
+// Start in-memory replica set so MongoDB transactions work in tests
 const connect = async () => {
-  mongoServer = await MongoMemoryServer.create({
-    instance: {
-      launchTimeout: 60000,
-    },
+  replSet = await MongoMemoryReplSet.create({
+    replSet: { count: 1, storageEngine: "wiredTiger" },
+    instanceOpts: [{ launchTimeout: 60000 }],
   });
-  const uri = mongoServer.getUri();
+
+  const uri = replSet.getUri();
   await mongoose.connect(uri);
 };
 
-// Disconnect mongoose and stop memory database
 const close = async () => {
   await mongoose.disconnect();
-  if (mongoServer) {
-    await mongoServer.stop();
+  if (replSet) {
+    await replSet.stop();
   }
 };
 
-// Clean database between tests
 const clear = async () => {
   const collections = mongoose.connection.collections;
   for (const key in collections) {
-    const collection = collections[key];
-    await collection.deleteMany({});
+    await collections[key].deleteMany({});
   }
 };
 

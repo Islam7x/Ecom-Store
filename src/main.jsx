@@ -1,24 +1,30 @@
-import { createRoot } from 'react-dom/client'
-import App from './App.jsx'
-import './index.css'
-import { GoogleOAuthProvider } from '@react-oauth/google';
-
-import { StrictMode } from 'react'
-import { CartProvider } from './context/CartContext';
-import { LocationProvider } from './context/LocationContext';
+import { createRoot } from "react-dom/client";
+import App from "./App.jsx";
+import "./index.css";
+import { GoogleOAuthProvider } from "@react-oauth/google";
+import { StrictMode } from "react";
+import { CartProvider } from "./context/CartContext";
+import { LocationProvider } from "./context/LocationContext";
+import { WishlistProvider } from "./context/WishlistContext";
 
 const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
 
-
-
-createRoot(document.getElementById('root')).render(
-  <StrictMode>
-    <CartProvider>
+const app = (
+  <CartProvider>
+    <WishlistProvider>
       <LocationProvider>
-        <GoogleOAuthProvider clientId={googleClientId}>
-          <App />
-        </GoogleOAuthProvider>
+        <App />
       </LocationProvider>
-    </CartProvider>
+    </WishlistProvider>
+  </CartProvider>
+);
+
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    {googleClientId ? (
+      <GoogleOAuthProvider clientId={googleClientId}>{app}</GoogleOAuthProvider>
+    ) : (
+      app
+    )}
   </StrictMode>,
-)
+);

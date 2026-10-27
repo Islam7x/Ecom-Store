@@ -1,19 +1,10 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import HorizontalScroller from "./HorizontalScroller";
+import { STORE_CATEGORIES } from "../lib/categories";
 
 const CategoryBar = () => {
-  const categories = [
-    "Electronics",
-    "Fashion",
-    "Grocery",
-    "Beauty & Fragrance",
-    "Home & Appliances",
-    "Baby",
-    "Toys & Games",
-    "Sports & Outdoors",
-    "Stationary & Books",
-  ];
+  const categories = STORE_CATEGORIES;
 
   const [hoveredIndex, setHoveredIndex] = useState(null);
 
@@ -33,8 +24,8 @@ const CategoryBar = () => {
         >
           {categories.map((category, index) => (
             <Link
-              key={category}
-              to={`/category/${category.toLowerCase().replace(/ & /g, "-").replace(/\s+/g, "-")}`}
+              key={category.slug}
+              to={`/category/${category.slug}`}
               onMouseEnter={() => setHoveredIndex(index)}
               onMouseLeave={() => setHoveredIndex(null)}
               style={{
@@ -44,7 +35,7 @@ const CategoryBar = () => {
               }}
               className="whitespace-nowrap text-sm font-semibold text-white hover:text-yellow-300 hover:underline transition-colors block"
             >
-              {category}
+              {category.name}
             </Link>
           ))}
         </HorizontalScroller>

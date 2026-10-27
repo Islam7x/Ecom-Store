@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { MapPin, Search, X, Loader2 } from "lucide-react";
 import { useDeliveryLocation } from "../context/LocationContext";
-import { DELIVERY_LOCATIONS, findNearestLocation } from "../data/locations";
+import { findNearestLocation } from "../data/locations";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -18,7 +18,8 @@ L.Icon.Default.mergeOptions({
 });
 
 const MapLocationModal = ({ isOpen, onClose, onConfirm }) => {
-  const { location, geoDetecting, detectLocation } = useDeliveryLocation();
+  const { location, locations, geoDetecting, detectLocation } =
+    useDeliveryLocation();
   const [manualSelection, setManualSelection] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -29,7 +30,12 @@ const MapLocationModal = ({ isOpen, onClose, onConfirm }) => {
   const markersRef = useRef({});
   const pinRef = useRef(null);
 
-  const selectedLocation = manualSelection ?? location ?? DELIVERY_LOCATIONS[0];
+  const deliveryLocations = useMemo(
+    () => (locations.length > 0 ? locations : []),
+    [locations],
+  );
+  const selectedLocation =
+    manualSelection ?? location ?? deliveryLocations[0] ?? null;
 
   useEffect(() => {
     if (searchQuery.trim() === "") {
@@ -87,7 +93,7 @@ const MapLocationModal = ({ isOpen, onClose, onConfirm }) => {
     mapInstanceRef.current = map;
 
     // Add markers for all locations
-    DELIVERY_LOCATIONS.forEach((loc) => {
+    deliveryLocations.forEach((loc) => {
       const coords = [loc.lat, loc.lng];
 
       const marker = L.marker(coords, {
@@ -136,7 +142,7 @@ const MapLocationModal = ({ isOpen, onClose, onConfirm }) => {
         mapInstanceRef.current = null;
       }
     };
-  }, [isOpen, locationCoords]);
+  }, [deliveryLocations, isOpen, locationCoords]);
 
   // Update marker styles when selection changes
   useEffect(() => {
@@ -323,7 +329,7 @@ const MapLocationModal = ({ isOpen, onClose, onConfirm }) => {
               </h3>
               <div className="space-y-2 flex-1 overflow-y-auto min-h-0 pr-2">
                 {searchQuery.trim() === "" ? (
-                  DELIVERY_LOCATIONS.map((loc) => (
+                  deliveryLocations.map((loc) => (
                     <button
                       key={loc.id}
                       onClick={() => {
