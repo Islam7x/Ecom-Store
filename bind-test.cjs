@@ -1,0 +1,1 @@
+const net=require('net'); const srv=net.createServer(); srv.on('error', err => { console.error('bind err', err); process.exit(1); }); srv.listen(5173, '127.0.0.1', () => { console.log('bind ok'); srv.close(); });

@@ -1,0 +1,46 @@
+
+> my-ecom-store@0.0.0 lint
+> eslint .
+
+
+D:\_Code\Ecom-Store\src\components\admin\AdminNavigation.jsx
+  51:50  warning  'Icon' is defined but never used  no-unused-vars
+  94:50  warning  'Icon' is defined but never used  no-unused-vars
+
+D:\_Code\Ecom-Store\src\components\admin\AdminSidebar.jsx
+  54:46  warning  'Icon' is defined but never used  no-unused-vars
+
+D:\_Code\Ecom-Store\src\components\admin\StatCard.jsx
+  3:9  warning  'Icon' is defined but never used  no-unused-vars
+
+D:\_Code\Ecom-Store\src\components\ui\Tabs.jsx
+  26:65  warning  'className' is defined but never used  no-unused-vars
+
+D:\_Code\Ecom-Store\src\hooks\notificationHelpers.js
+  1:10  warning  'useNotification' is defined but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+D:\_Code\Ecom-Store\src\pages\AdminDashboard.jsx
+  19:10  warning  'period' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u          no-unused-vars
+  19:18  warning  'setPeriod' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u       no-unused-vars
+  34:5   warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+
+D:\_Code\Ecom-Store\src\pages\AdminOrders.jsx
+  10:10  warning  'loading' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                         no-unused-vars
+  38:5   warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  40:6   warning  React Hook useEffect has a missing dependency: 'fetchOrders'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\_Code\Ecom-Store\src\pages\AdminProducts.jsx
+  52:5  warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  54:6  warning  React Hook useEffect has a missing dependency: 'fetchProducts'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\_Code\Ecom-Store\src\pages\AdminUsers.jsx
+  10:10  warning  'loading' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                        no-unused-vars
+  39:5   warning  Unused eslint-disable directive (no problems were reported from 'react-hooks/exhaustive-deps')
+  41:6   warning  React Hook useEffect has a missing dependency: 'fetchUsers'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+D:\_Code\Ecom-Store\src\pages\Home.jsx
+  101:6  warning  React Hook useEffect has a missing dependency: 'searchQuery'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+Γ£û 18 problems (0 errors, 18 warnings)
+  0 errors and 4 warnings potentially fixable with the `--fix` option.
+
