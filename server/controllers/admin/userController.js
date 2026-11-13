@@ -2,6 +2,7 @@
 const User = require("../../models/User");
 const Order = require("../../models/Order");
 const { REVENUE_ORDER_STATUSES } = require("../../lib/orderLifecycle");
+const { safeSearchPattern } = require("../../lib/query");
 
 /**
  * GET /api/admin/users
@@ -19,11 +20,11 @@ exports.getAllUsers = async (req, res) => {
 
     const filter = {};
 
-    // Search by name or email
-    if (search) {
+    const searchPattern = safeSearchPattern(search);
+    if (searchPattern) {
       filter.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
+        { name: { $regex: searchPattern, $options: "i" } },
+        { email: { $regex: searchPattern, $options: "i" } },
       ];
     }
 
@@ -169,15 +170,19 @@ exports.deleteUser = async (req, res) => {
         .json({ message: "You cannot delete your own account" });
     }
 
-    const user = await User.findByIdAndDelete(req.params.id);
+    const user = await User.findById(req.params.id);
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    user.isActive = false;
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    await user.save();
+
     res.json({
-      message: "User account deleted successfully",
-      user: { _id: user._id, name: user.name, email: user.email },
+      message: "User account deactivated",
+      user: { _id: user._id, name: user.name, email: user.email, isActive: false },
     });
   } catch (error) {
     res.status(500).json({ message: error.message });

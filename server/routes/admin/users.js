@@ -8,10 +8,15 @@ const ctrl = require("../../controllers/admin/userController");
 
 const router = express.Router();
 
-// GET /api/admin/users - Get all users with pagination
 router.get("/", protect, requireAdmin, ctrl.getAllUsers);
 
-// GET /api/admin/users/:id - Get specific user details
+router.get(
+  "/reports/customer-segments",
+  protect,
+  requireAdmin,
+  ctrl.getCustomerSegments,
+);
+
 router.get("/:id", protect, requireAdmin, ctrl.getUserDetails);
 
 // PUT /api/admin/users/:id/role - Update user's admin role
@@ -28,13 +33,5 @@ router.put(
 
 // DELETE /api/admin/users/:id - Delete a user
 router.delete("/:id", protect, requireAdmin, ctrl.deleteUser);
-
-// GET /api/admin/users/reports/customer-segments - Customer segmentation
-router.get(
-  "/reports/customer-segments",
-  protect,
-  requireAdmin,
-  ctrl.getCustomerSegments,
-);
 
 module.exports = router;

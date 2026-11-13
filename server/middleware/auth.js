@@ -18,6 +18,9 @@ const protect = async (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ message: 'User not found' });
     }
+    if (req.user.isActive === false) {
+      return res.status(401).json({ message: "Account is disabled" });
+    }
     if ((decoded.tv || 0) !== (req.user.tokenVersion || 0)) {
       return res.status(401).json({ message: "Session is no longer valid" });
     }

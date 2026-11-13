@@ -14,10 +14,14 @@ const { initSentry, flush: sentrylush } = require("./config/sentry");
 const connectDB = require("./config/db");
 const errorHandler = require("./middleware/errorHandler");
 const { isRedisConnected } = require("./middleware/cache");
-const { releaseExpiredReservations } = require("./lib/orderLifecycle");
+const { startBackgroundJobs, stopBackgroundJobs } = require("./lib/jobs");
 const { metricsEndpoint } = require("./middleware/validationLogger");
 const { protect } = require("./middleware/auth");
 const requireAdmin = require("./middleware/admin");
+const { getAllowedOrigins } = require("./lib/origins");
+const requireTrustedOrigin = require("./middleware/requireTrustedOrigin");
+const sanitizeMongo = require("./middleware/sanitizeMongo");
+const logger = require("./lib/logger");
 const {
   healthCheckMiddleware,
   deepHealthCheck,
@@ -36,11 +40,14 @@ const adminProductRoutes = require("./routes/admin/products");
 const adminOrderRoutes = require("./routes/admin/orders");
 const adminDashboardRoutes = require("./routes/admin/dashboard");
 const adminUserRoutes = require("./routes/admin/users");
+const cartRoutes = require("./routes/cart");
+const couponRoutes = require("./routes/coupons");
+const adminCouponRoutes = require("./routes/admin/coupons");
 
 // ── Validate required env vars ───────────────
 const required = ["JWT_SECRET", "STRIPE_SECRET_KEY"];
 if (process.env.NODE_ENV === "production") {
-  required.push("MONGO_URI", "STRIPE_WEBHOOK_SECRET");
+  required.push("MONGO_URI", "STRIPE_WEBHOOK_SECRET", "CORS_ORIGIN", "CLIENT_URL");
 }
 for (const key of required) {
   if (!process.env[key]) {
@@ -51,17 +58,14 @@ for (const key of required) {
 
 const app = express();
 
-// ── Initialize Sentry (must be before other middleware) ──
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
 initSentry(app);
 
-// ── CORS ─────────────────────────────────────
-const allowedOrigins = (
-  process.env.CORS_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173"
-)
-  .split(",")
-  .map((o) => o.trim().replace(/\/$/, ""));
-
-console.log("✅ Allowed CORS Origins:", allowedOrigins);
+const allowedOrigins = getAllowedOrigins();
+logger.info("CORS allowlist loaded", { origins: allowedOrigins });
 
 app.use(
   cors({
@@ -82,6 +86,8 @@ app.use("/api/webhook", webhookRoutes);
 // ── Common middleware ────────────────────────
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
+app.use(sanitizeMongo);
+app.use(requireTrustedOrigin);
 
 // Configure helmet with proper COOP settings for Google OAuth
 app.use(
@@ -93,9 +99,10 @@ app.use(
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 200,
+    max: process.env.NODE_ENV === "test" ? 5000 : 300,
     standardHeaders: true,
     legacyHeaders: false,
+    skip: (req) => req.path === "/health",
   }),
 );
 
@@ -134,19 +141,15 @@ app.use("/api/checkout", checkoutRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/addresses", addressRoutes);
 app.use("/api/locations", locationRoutes);
+app.use("/api/cart", cartRoutes);
+app.use("/api/coupons", couponRoutes);
 
 // ── Admin routes ─────────────────────────────
 app.use("/api/admin/products", adminProductRoutes);
 app.use("/api/admin/orders", adminOrderRoutes);
 app.use("/api/admin/dashboard", adminDashboardRoutes);
 app.use("/api/admin/users", adminUserRoutes);
-
-// ── Backward compatibility (old checkout path) ──
-//    Remove this once the frontend is updated
-app.post("/create-checkout-session", (req, res, next) => {
-  req.url = "/api/checkout/session";
-  app.handle(req, res, next);
-});
+app.use("/api/admin/coupons", adminCouponRoutes);
 
 // ── Global error handler (must be last) ──────
 app.use((_req, res) => {
@@ -157,28 +160,16 @@ app.use(errorHandler);
 // ── Start server ─────────────────────────────
 const PORT = process.env.PORT || 5000;
 
-let reservationCleanupTimer;
-
 if (process.env.NODE_ENV !== "test") {
   connectDB().then(() => {
-    const releaseExpired = () =>
-      releaseExpiredReservations().catch((error) => {
-        console.error(
-          "Failed to release expired checkout reservations:",
-          error.message,
-        );
-      });
-
-    releaseExpired();
-    reservationCleanupTimer = setInterval(releaseExpired, 5 * 60 * 1000);
-    reservationCleanupTimer.unref();
+    startBackgroundJobs();
 
     app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`   Environment: ${process.env.NODE_ENV || "development"}`);
-      console.log(
-        `   Cache: ${isRedisConnected() ? "✅ Redis enabled" : "⚠️  Redis disabled (no REDIS_URL set)"}`,
-      );
+      logger.info("API listening", {
+        port: PORT,
+        env: process.env.NODE_ENV || "development",
+        redis: isRedisConnected(),
+      });
     });
   });
 }
@@ -187,7 +178,7 @@ if (process.env.NODE_ENV !== "test") {
 const shutdown = async (signal) => {
   console.log(`\n${signal} received — shutting down gracefully…`);
 
-  if (reservationCleanupTimer) clearInterval(reservationCleanupTimer);
+  stopBackgroundJobs();
 
   // Flush Sentry events
   await sentrylush(2000).catch(() => {});

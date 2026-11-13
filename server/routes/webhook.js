@@ -1,5 +1,6 @@
 // server/routes/webhook.js
 const express = require("express");
+const asyncHandler = require("../middleware/asyncHandler");
 const ctrl = require("../controllers/webhookController");
 
 const router = express.Router();
@@ -10,7 +11,7 @@ const router = express.Router();
 router.post(
   "/",
   express.raw({ type: "application/json" }),
-  ctrl.handleStripeWebhook
+  asyncHandler(ctrl.handleStripeWebhook),
 );
 
 module.exports = router;

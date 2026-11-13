@@ -19,6 +19,7 @@ const checkoutSchema = Joi.object({
     .min(1)
     .max(50)
     .required(),
+  couponCode: Joi.string().trim().min(3).max(40).optional(),
   location: Joi.object({
     id: Joi.string().required(),
     name: Joi.string().required(),
@@ -36,6 +37,13 @@ const checkoutSchema = Joi.object({
     addressType: Joi.string().valid("home", "office").optional(),
   }).optional(),
 });
+
+router.post(
+  "/quote",
+  protect,
+  validate(checkoutSchema),
+  asyncHandler(ctrl.quoteCheckout),
+);
 
 router.post(
   "/session",

@@ -30,6 +30,7 @@ const db = require("./setup");
 const Product = require("../models/Product");
 const User = require("../models/User");
 const Order = require("../models/Order");
+const Coupon = require("../models/Coupon");
 
 beforeAll(async () => await db.connect());
 afterEach(async () => await db.clear());
@@ -71,6 +72,17 @@ describe("Stripe Webhook Handler", () => {
   });
 
   test("POST /api/webhook -> Should update Order status to paid on checkout.session.completed", async () => {
+    const coupon = await Coupon.create({
+      code: "PAID",
+      type: "fixed",
+      value: 10,
+      maxRedemptions: 1,
+      reservedCount: 1,
+    });
+    order.couponId = coupon._id;
+    order.couponCode = coupon.code;
+    await order.save();
+
     const payload = {
       type: "checkout.session.completed",
       data: {
@@ -93,9 +105,23 @@ describe("Stripe Webhook Handler", () => {
     const updatedOrder = await Order.findById(order._id);
     expect(updatedOrder.status).toBe("paid");
     expect(updatedOrder.paidAt).toBeDefined();
+    const updatedCoupon = await Coupon.findById(coupon._id);
+    expect(updatedCoupon.reservedCount).toBe(0);
+    expect(updatedCoupon.redeemedCount).toBe(1);
   });
 
   test("POST /api/webhook -> Should release stock and set status to cancelled on checkout.session.expired", async () => {
+    const coupon = await Coupon.create({
+      code: "EXPIRED",
+      type: "fixed",
+      value: 10,
+      maxRedemptions: 1,
+      reservedCount: 1,
+    });
+    order.couponId = coupon._id;
+    order.couponCode = coupon.code;
+    await order.save();
+
     const payload = {
       type: "checkout.session.expired",
       data: {
@@ -121,6 +147,9 @@ describe("Stripe Webhook Handler", () => {
     // Stock should be released back to the pre-checkout level.
     const updatedProduct = await Product.findById(product._id);
     expect(updatedProduct.stock).toBe(5);
+    const updatedCoupon = await Coupon.findById(coupon._id);
+    expect(updatedCoupon.reservedCount).toBe(0);
+    expect(updatedCoupon.redeemedCount).toBe(0);
   });
 
   test("POST /api/webhook -> Should return 400 if Stripe signature verification fails", async () => {

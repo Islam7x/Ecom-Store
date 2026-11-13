@@ -96,14 +96,13 @@ const metrics = new ValidationMetrics();
  */
 const detectSuspiciousPatterns = (obj, req) => {
   const suspiciousPatterns = [
-    { regex: /<script|javascript:|on\w+=/gi, reason: "XSS attempt" },
+    { regex: /<script|javascript:|on\w+=/i, reason: "XSS attempt" },
     {
-      regex: /union.*select|select.*from|insert|delete|update|drop/gi,
+      regex: /union.*select|select.*from|insert|delete|update|drop/i,
       reason: "SQL injection attempt",
     },
-    // More specific NoSQL injection detection - avoid false positives
     {
-      regex: /^\s*\{[\s\S]*\$where[\s\S]*\}|db\.(collection|eval)/gi,
+      regex: /^\s*\{[\s\S]*\$where[\s\S]*\}|db\.(collection|eval)/i,
       reason: "NoSQL injection attempt",
     },
   ];
@@ -143,6 +142,7 @@ const withValidationLogging = (schema, source = "body") => {
 
     const { error, value } = schema.validate(req[source], {
       abortEarly: false,
+      stripUnknown: true,
     });
 
     if (error) {

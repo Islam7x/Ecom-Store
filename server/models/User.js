@@ -23,7 +23,10 @@ const UserSchema = new mongoose.Schema(
       },
     },
     isAdmin: { type: Boolean, default: false },
+    isActive: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0, select: false },
+    passwordResetToken: { type: String, select: false },
+    passwordResetExpires: { type: Date, select: false },
   },
   { timestamps: true },
 );
@@ -36,7 +39,11 @@ UserSchema.index({ isAdmin: 1 });
 UserSchema.pre("save", async function () {
   if (!this.isModified("password")) return;
   if (this.password) {
-    this.password = await bcrypt.hash(this.password, 10);
+    const rounds = Number(
+      process.env.BCRYPT_ROUNDS ||
+        (process.env.NODE_ENV === "test" ? 4 : 12),
+    );
+    this.password = await bcrypt.hash(this.password, rounds);
   }
 });
 

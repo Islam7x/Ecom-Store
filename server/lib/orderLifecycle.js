@@ -1,5 +1,7 @@
 const Order = require("../models/Order");
 const Product = require("../models/Product");
+const Coupon = require("../models/Coupon");
+const logger = require("./logger");
 const { withTransaction, withSession } = require("./transactionHelper");
 
 const REVENUE_ORDER_STATUSES = ["paid", "shipped", "delivered"];
@@ -40,6 +42,20 @@ async function cancelPendingOrder(orderId, { actor = "system", note } = {}) {
         throw new Error(
           `Unable to release inventory: product ${item.product} no longer exists`,
         );
+      }
+    }
+
+    if (order.couponId) {
+      const result = await Coupon.updateOne(
+        { _id: order.couponId, reservedCount: { $gt: 0 } },
+        { $inc: { reservedCount: -1 } },
+        withSession(session),
+      );
+      if (result.matchedCount !== 1) {
+        logger.warn("Coupon reservation missing during order cancellation", {
+          orderId: order._id.toString(),
+          couponId: order.couponId.toString(),
+        });
       }
     }
 

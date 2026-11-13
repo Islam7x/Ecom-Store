@@ -21,12 +21,9 @@ const withSession = (session, extra = {}) =>
  */
 async function withTransaction(operation) {
   const session = await mongoose.startSession();
-  session.startTransaction();
 
   try {
-    const result = await operation(session);
-    await session.commitTransaction();
-    return result;
+    return await session.withTransaction(() => operation(session));
   } catch (error) {
     await session.abortTransaction().catch(() => {});
 

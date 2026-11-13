@@ -1,41 +1,50 @@
-// server/controllers/webhookController.js
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const Order = require("../models/Order");
+const Cart = require("../models/Cart");
+const Coupon = require("../models/Coupon");
 const { cancelPendingOrder, statusEvent } = require("../lib/orderLifecycle");
+const { withTransaction, withSession } = require("../lib/transactionHelper");
+const logger = require("../lib/logger");
+const { sendMail } = require("../lib/mailer");
+const User = require("../models/User");
 
-const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+const verifyStripeEvent = (req) => {
+  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const allowInsecureDev =
+    process.env.NODE_ENV === "development" && !endpointSecret;
 
-// ──────────────────────────────────────────────
-// POST /api/webhook
-// Stripe sends events here after payment events.
-// The route must use express.raw() — NOT express.json().
-// ──────────────────────────────────────────────
+  if (allowInsecureDev) {
+    logger.warn("Stripe webhook signature verification skipped in development");
+    return typeof req.body === "string" || Buffer.isBuffer(req.body)
+      ? JSON.parse(req.body)
+      : req.body;
+  }
+
+  if (!endpointSecret) {
+    const error = new Error("STRIPE_WEBHOOK_SECRET is not configured");
+    error.status = 500;
+    throw error;
+  }
+
+  const signature = req.headers["stripe-signature"];
+  return stripe.webhooks.constructEvent(req.body, signature, endpointSecret);
+};
+
 exports.handleStripeWebhook = async (req, res) => {
   let event;
 
-  // ── 1. Verify signature ────────────────────
-  if (endpointSecret) {
-    const sig = req.headers["stripe-signature"];
-    try {
-      event = stripe.webhooks.constructEvent(req.body, sig, endpointSecret);
-    } catch (err) {
-      console.error("⚠️  Webhook signature verification failed:", err.message);
-      return res.status(400).json({ message: `Webhook Error: ${err.message}` });
-    }
-  } else {
-    // No secret configured — parse body directly (dev mode only)
-    console.warn(
-      "⚠️  STRIPE_WEBHOOK_SECRET not set — skipping signature verification",
-    );
-    event = req.body;
+  try {
+    event = verifyStripeEvent(req);
+  } catch (err) {
+    logger.error("Webhook signature verification failed", {
+      error: err.message,
+    });
+    return res.status(400).json({ message: `Webhook Error: ${err.message}` });
   }
 
-  // ── 2. Handle event types ──────────────────
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object;
-      // Card payments are complete here. For delayed methods, Stripe sends a
-      // later async_payment_succeeded event instead.
       if (!session.payment_status || session.payment_status === "paid") {
         await handleCheckoutCompleted(session);
       }
@@ -43,73 +52,126 @@ exports.handleStripeWebhook = async (req, res) => {
     }
 
     case "checkout.session.async_payment_succeeded": {
-      const session = event.data.object;
-      await handleCheckoutCompleted(session);
+      await handleCheckoutCompleted(event.data.object);
       break;
     }
 
     case "checkout.session.expired": {
-      const session = event.data.object;
-      await handleCheckoutExpired(session);
+      await handleCheckoutExpired(event.data.object);
       break;
     }
 
     case "checkout.session.async_payment_failed": {
-      const session = event.data.object;
-      await handleCheckoutExpired(session, "Payment failed");
+      await handleCheckoutExpired(event.data.object, "Payment failed");
       break;
     }
 
     default:
-      // Unhandled event type — acknowledge it silently
       break;
   }
 
-  // Always respond 200 so Stripe doesn't retry
   res.json({ received: true });
 };
 
-// ──────────────────────────────────────────────
-// Handle successful payment
-// ──────────────────────────────────────────────
 async function handleCheckoutCompleted(session) {
-  const order = await Order.findOneAndUpdate(
-    { stripeSessionId: session.id, status: "pending" },
-    {
-      $set: { status: "paid", paidAt: new Date() },
-      $push: {
-        statusHistory: statusEvent(
-          "paid",
-          "payment",
-          "Stripe confirmed payment",
-        ),
+  const order = await withTransaction(async (dbSession) => {
+    const updatedOrder = await Order.findOneAndUpdate(
+      { stripeSessionId: session.id, status: "pending" },
+      {
+        $set: { status: "paid", paidAt: new Date() },
+        $push: {
+          statusHistory: statusEvent(
+            "paid",
+            "payment",
+            "Stripe confirmed payment",
+          ),
+        },
       },
-    },
-    { returnDocument: "after" },
-  );
+      withSession(dbSession, { returnDocument: "after" }),
+    );
+
+    if (!updatedOrder) return null;
+
+    if (updatedOrder.couponId) {
+      const conversion = await Coupon.updateOne(
+        {
+          _id: updatedOrder.couponId,
+          reservedCount: { $gt: 0 },
+        },
+        { $inc: { reservedCount: -1, redeemedCount: 1 } },
+        withSession(dbSession),
+      );
+
+      if (conversion.matchedCount !== 1) {
+        const coupon = await Coupon.findById(updatedOrder.couponId)
+          .select("_id")
+          .session(dbSession);
+        if (coupon) {
+          await Coupon.updateOne(
+            { _id: coupon._id },
+            { $inc: { redeemedCount: 1 } },
+            withSession(dbSession),
+          );
+        }
+        logger.warn("Coupon reservation missing when payment completed", {
+          orderId: updatedOrder._id.toString(),
+          couponId: updatedOrder.couponId.toString(),
+        });
+      }
+    } else if (updatedOrder.couponCode) {
+      await Coupon.updateOne(
+        { code: updatedOrder.couponCode },
+        { $inc: { redeemedCount: 1 } },
+        withSession(dbSession),
+      );
+    }
+
+    return updatedOrder;
+  });
 
   if (!order) {
     const knownOrder = await Order.findOne({ stripeSessionId: session.id })
       .select("_id status")
       .lean();
     if (knownOrder) {
-      console.log(
-        `Webhook: order ${knownOrder._id} already transitioned to ${knownOrder.status}`,
-      );
+      logger.info("Webhook order already transitioned", {
+        orderId: knownOrder._id.toString(),
+        status: knownOrder.status,
+      });
     } else {
-      console.error(`Webhook: no order found for session ${session.id}`);
+      logger.error("Webhook order missing for session", {
+        sessionId: session.id,
+      });
     }
     return;
   }
 
-  console.log(`✅ Order ${order._id} marked as paid via webhook`);
+  await Cart.findOneAndUpdate(
+    { user: order.user },
+    { $set: { items: [] } },
+  );
+
+  const customer = await User.findById(order.user).select("email name").lean();
+  if (customer?.email) {
+    await sendMail({
+      to: customer.email,
+      subject: `Order ${order._id} confirmed`,
+      text: `Thanks${customer.name ? ` ${customer.name}` : ""}. We received payment for order ${order._id}. Total ${order.total}.`,
+    }).catch((error) => {
+      logger.error("Order confirmation email failed", {
+        error: error.message,
+        orderId: order._id.toString(),
+      });
+    });
+  }
+
+  logger.info("Order marked paid", { orderId: order._id.toString() });
 }
 
-// ──────────────────────────────────────────────
-// Handle expired checkout (release reserved stock)
-// Uses transaction: stock release + order status update must both succeed
-// ──────────────────────────────────────────────
-async function handleCheckoutExpired(session, reason = "Stripe checkout session expired") {
+async function handleCheckoutExpired(
+  session,
+  reason = "Stripe checkout session expired",
+) {
   const order = await Order.findOne({ stripeSessionId: session.id });
 
   if (!order || order.status !== "pending") {
@@ -124,15 +186,14 @@ async function handleCheckoutExpired(session, reason = "Stripe checkout session 
 
     if (!cancelledOrder) return;
 
-    console.log(
-      `⏰ Order ${order._id} cancelled — stock released (session expired)`,
-    );
+    logger.info("Checkout cancelled and stock released", {
+      orderId: order._id.toString(),
+      reason,
+    });
   } catch (error) {
-    console.error(
-      `❌ Error cancelling order ${order._id} on session expiry:`,
-      error.message,
-    );
-    // If transaction fails, stock and order state remain consistent
-    // (either both succeed or both rollback)
+    logger.error("Failed to cancel expired checkout", {
+      orderId: order._id.toString(),
+      error: error.message,
+    });
   }
 }

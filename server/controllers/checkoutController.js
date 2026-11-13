@@ -2,14 +2,11 @@ const mongoose = require("mongoose");
 const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const Product = require("../models/Product");
 const Order = require("../models/Order");
-const {
-  DELIVERY_LOCATIONS,
-  DEFAULT_LOCATION_ID,
-  getShippingCost,
-} = require("../data/locations");
-const { toMoney, calculateTax } = require("../lib/money");
+const Coupon = require("../models/Coupon");
 const { statusEvent } = require("../lib/orderLifecycle");
 const { withTransaction, withSession } = require("../lib/transactionHelper");
+const { priceCheckout } = require("../lib/checkoutPricing");
+const logger = require("../lib/logger");
 
 const CHECKOUT_KEY_PATTERN = /^[A-Za-z0-9._-]{16,128}$/;
 
@@ -36,16 +33,6 @@ const getCheckoutKey = (req) => {
   return key;
 };
 
-const normalizeItems = (items) => {
-  const combined = new Map();
-
-  for (const item of items) {
-    combined.set(item.id, (combined.get(item.id) || 0) + item.quantity);
-  }
-
-  return [...combined.entries()].map(([id, quantity]) => ({ id, quantity }));
-};
-
 const createInsufficientStockError = (product, item) => {
   const error = new Error(
     `Insufficient stock for "${product?.name || item.id}". Requested ${item.quantity}, available ${product?.stock ?? 0}.`,
@@ -63,11 +50,84 @@ async function getExistingCheckout(userId, checkoutKey) {
     .lean();
 }
 
-// POST /api/checkout/session
-// Creates the Stripe session from server-side prices, then atomically reserves
-// inventory and records the matching pending order.
+const toQuote = (priced) => ({
+  couponCode: priced.couponCode,
+  subtotal: priced.subtotal,
+  discount: priced.discount,
+  shippingCost: priced.shippingCost,
+  tax: priced.tax,
+  total: priced.total,
+});
+
+const createCouponUnavailableError = () => {
+  const error = new Error("This coupon is no longer available");
+  error.status = 409;
+  error.code = "COUPON_UNAVAILABLE";
+  return error;
+};
+
+const reserveCouponRedemption = async (coupon, subtotal, now, session) => {
+  const reserved = await Coupon.findOneAndUpdate(
+    {
+      _id: coupon._id,
+      isActive: { $ne: false },
+      $expr: {
+        $and: [
+          {
+            $lte: [
+              { $ifNull: ["$minSubtotal", 0] },
+              subtotal,
+            ],
+          },
+          {
+            $or: [
+              { $eq: [{ $ifNull: ["$startsAt", null] }, null] },
+              { $lte: ["$startsAt", now] },
+            ],
+          },
+          {
+            $or: [
+              { $eq: [{ $ifNull: ["$endsAt", null] }, null] },
+              { $gte: ["$endsAt", now] },
+            ],
+          },
+          {
+            $or: [
+              { $eq: [{ $ifNull: ["$maxRedemptions", null] }, null] },
+              {
+                $lt: [
+                  {
+                    $add: [
+                      { $ifNull: ["$redeemedCount", 0] },
+                      { $ifNull: ["$reservedCount", 0] },
+                    ],
+                  },
+                  "$maxRedemptions",
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    },
+    { $inc: { reservedCount: 1 } },
+    withSession(session),
+  );
+
+  if (!reserved) throw createCouponUnavailableError();
+};
+
+exports.quoteCheckout = async (req, res) => {
+  const priced = await priceCheckout({
+    items: req.body.items,
+    location: req.body.location,
+    couponCode: req.body.couponCode,
+  });
+  res.json(toQuote(priced));
+};
+
 exports.createCheckoutSession = async (req, res) => {
-  const { items, location: locationInput, address } = req.body;
+  const { items, location: locationInput, address, couponCode } = req.body;
   const checkoutKey = getCheckoutKey(req);
   const now = new Date();
 
@@ -87,46 +147,26 @@ exports.createCheckoutSession = async (req, res) => {
     });
   }
 
-  const orderItemsRequest = normalizeItems(items);
-  const productIds = orderItemsRequest.map((item) => item.id);
-  const storeItems = await Product.find({
-    _id: { $in: productIds },
-    isActive: { $ne: false },
+  const priced = await priceCheckout({
+    items,
+    location: locationInput,
+    couponCode,
+    now,
   });
 
-  if (storeItems.length !== productIds.length) {
-    const found = new Set(storeItems.map((product) => product._id.toString()));
-    const missing = productIds.filter((id) => !found.has(id));
-    return res
-      .status(404)
-      .json({ message: `Product(s) not found or unavailable: ${missing.join(", ")}` });
-  }
+  const {
+    orderItemsRequest,
+    orderItems,
+    storeItems,
+    deliveryLocation,
+    coupon,
+    subtotal,
+    discount,
+    shippingCost,
+    tax,
+    total,
+  } = priced;
 
-  const deliveryLocation = locationInput
-    ? DELIVERY_LOCATIONS.find((location) => location.id === locationInput.id)
-    : DELIVERY_LOCATIONS.find((location) => location.id === DEFAULT_LOCATION_ID);
-
-  if (!deliveryLocation) {
-    return res.status(400).json({ message: "Selected delivery location is unavailable" });
-  }
-
-  const orderItems = orderItemsRequest.map((item) => {
-    const product = storeItems.find((candidate) => candidate._id.toString() === item.id);
-    return {
-      product: product._id,
-      name: product.name,
-      price: toMoney(product.price),
-      quantity: item.quantity,
-      image: product.image,
-    };
-  });
-
-  const subtotal = toMoney(
-    orderItems.reduce((sum, item) => sum + item.price * item.quantity, 0),
-  );
-  const shippingCost = toMoney(getShippingCost(deliveryLocation, subtotal));
-  const tax = calculateTax(subtotal);
-  const total = toMoney(subtotal + shippingCost + tax);
   const reservationExpiresAt = new Date(now.getTime() + getReservationWindowMs());
   const clientUrl = (process.env.CLIENT_URL || "http://localhost:5173").replace(
     /\/$/,
@@ -168,24 +208,35 @@ exports.createCheckoutSession = async (req, res) => {
     });
   }
 
-  // Creating the Stripe session first avoids a database record with no hosted
-  // payment session. It is not returned until the inventory reservation commits.
-  const stripeSession = await stripe.checkout.sessions.create(
-    {
-      payment_method_types: ["card"],
-      line_items: lineItems,
-      mode: "payment",
-      customer_email: req.user.email,
-      success_url: `${clientUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${clientUrl}/cart`,
-      expires_at: Math.floor(reservationExpiresAt.getTime() / 1000),
-      client_reference_id: orderId.toString(),
-      metadata: {
-        orderId: orderId.toString(),
-        deliveryCity: address?.cityArea || deliveryLocation.name,
-        deliveryGovernorate: address?.governorate || deliveryLocation.governorate,
-      },
+  const sessionPayload = {
+    payment_method_types: ["card"],
+    line_items: lineItems,
+    mode: "payment",
+    customer_email: req.user.email,
+    success_url: `${clientUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${clientUrl}/cart`,
+    expires_at: Math.floor(reservationExpiresAt.getTime() / 1000),
+    client_reference_id: orderId.toString(),
+    metadata: {
+      orderId: orderId.toString(),
+      deliveryCity: address?.cityArea || deliveryLocation.name,
+      deliveryGovernorate: address?.governorate || deliveryLocation.governorate,
+      couponCode: priced.couponCode || "",
     },
+  };
+
+  if (discount > 0) {
+    const stripeCoupon = await stripe.coupons.create({
+      amount_off: Math.round(discount * 100),
+      currency: "usd",
+      duration: "once",
+      name: priced.couponCode || "Discount",
+    });
+    sessionPayload.discounts = [{ coupon: stripeCoupon.id }];
+  }
+
+  const stripeSession = await stripe.checkout.sessions.create(
+    sessionPayload,
     checkoutKey
       ? { idempotencyKey: `checkout_${req.user._id.toString()}_${checkoutKey}` }
       : undefined,
@@ -216,6 +267,10 @@ exports.createCheckoutSession = async (req, res) => {
           reservedItems.push(item);
         }
 
+        if (coupon) {
+          await reserveCouponRedemption(coupon, subtotal, now, session);
+        }
+
         await Order.create(
           [
             {
@@ -229,6 +284,9 @@ exports.createCheckoutSession = async (req, res) => {
               shippingCost,
               tax,
               subtotal,
+              discount,
+              couponCode: priced.couponCode,
+              couponId: coupon?._id,
               total,
               status: "pending",
               reservationExpiresAt,
@@ -240,9 +298,6 @@ exports.createCheckoutSession = async (req, res) => {
           withSession(session),
         );
       } catch (error) {
-        // Standalone MongoDB cannot use multi-document transactions. In that
-        // development fallback, compensate any stock writes made before the
-        // order write failed (for example, an idempotency-key race).
         if (!session && reservedItems.length > 0) {
           await Promise.all(
             reservedItems.map((item) =>
@@ -257,13 +312,15 @@ exports.createCheckoutSession = async (req, res) => {
       }
     });
   } catch (error) {
-    // A session never handed to the customer should not remain payable.
     if (typeof stripe.checkout.sessions.expire === "function") {
       await stripe.checkout.sessions.expire(stripeSession.id).catch(() => {});
     }
 
     if (error.code === 11000 && checkoutKey) {
-      const concurrentCheckout = await getExistingCheckout(req.user._id, checkoutKey);
+      const concurrentCheckout = await getExistingCheckout(
+        req.user._id,
+        checkoutKey,
+      );
       if (concurrentCheckout?.checkoutUrl) {
         return res.json({ url: concurrentCheckout.checkoutUrl, reused: true });
       }
@@ -276,9 +333,16 @@ exports.createCheckoutSession = async (req, res) => {
     throw error;
   }
 
+  logger.info("Checkout session created", {
+    orderId: orderId.toString(),
+    userId: req.user._id.toString(),
+    coupon: coupon?.code,
+    total,
+  });
+
   res.json({
     url: stripeSession.url,
     orderId: orderId.toString(),
-    totals: { subtotal, shippingCost, tax, total },
+    totals: toQuote(priced),
   });
 };

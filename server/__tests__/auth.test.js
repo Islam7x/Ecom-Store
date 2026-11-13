@@ -88,4 +88,30 @@ describe("Auth Endpoints", () => {
 
     expect(res.body.email).toBe(testUser.email);
   });
+
+  test("POST /api/auth/forgot-password -> Should not retain a reset token when mail is unavailable", async () => {
+    const previousSmtpHost = process.env.SMTP_HOST;
+    process.env.SMTP_HOST = "";
+    await User.create(testUser);
+
+    try {
+      const res = await request(app)
+        .post("/api/auth/forgot-password")
+        .send({ email: testUser.email })
+        .expect(200);
+
+      expect(res.body.message).toContain("If that email is registered");
+      const user = await User.findOne({ email: testUser.email }).select(
+        "+passwordResetToken +passwordResetExpires",
+      );
+      expect(user.passwordResetToken).toBeUndefined();
+      expect(user.passwordResetExpires).toBeUndefined();
+    } finally {
+      if (previousSmtpHost === undefined) {
+        delete process.env.SMTP_HOST;
+      } else {
+        process.env.SMTP_HOST = previousSmtpHost;
+      }
+    }
+  });
 });

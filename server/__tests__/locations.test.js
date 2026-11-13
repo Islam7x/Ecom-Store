@@ -24,4 +24,15 @@ describe("Location Endpoints", () => {
       shippingCost: expect.any(Number),
     });
   });
+
+  test("GET /api/locations -> Should allow the local Vite dev origin", async () => {
+    const res = await request(app)
+      .get("/api/locations")
+      .set("Origin", "http://127.0.0.1:5239")
+      .expect(200);
+
+    expect(res.headers["access-control-allow-origin"]).toBe(
+      "http://127.0.0.1:5239",
+    );
+  });
 });

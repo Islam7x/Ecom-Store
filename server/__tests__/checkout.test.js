@@ -25,6 +25,7 @@ const db = require("./setup");
 const Product = require("../models/Product");
 const User = require("../models/User");
 const Order = require("../models/Order");
+const Coupon = require("../models/Coupon");
 
 beforeAll(async () => await db.connect());
 afterEach(async () => await db.clear());
@@ -122,5 +123,41 @@ describe("Checkout Endpoints", () => {
     expect(second.body).toMatchObject({ url: first.body.url, reused: true });
     expect(await Order.countDocuments()).toBe(1);
     expect((await Product.findById(testProduct._id)).stock).toBe(3);
+  });
+
+  test("POST /api/checkout/session -> Should not exceed a coupon redemption limit under concurrent checkouts", async () => {
+    const coupon = await Coupon.create({
+      code: "LIMITED",
+      type: "fixed",
+      value: 0,
+      maxRedemptions: 1,
+    });
+    const requestBody = {
+      items: [{ id: testProduct._id.toString(), quantity: 1 }],
+      couponCode: coupon.code,
+    };
+
+    const responses = await Promise.all([
+      request(app)
+        .post("/api/checkout/session")
+        .set("Cookie", userCookie)
+        .send(requestBody),
+      request(app)
+        .post("/api/checkout/session")
+        .set("Cookie", userCookie)
+        .send(requestBody),
+    ]);
+
+    expect(responses.filter((response) => response.status === 200)).toHaveLength(
+      1,
+    );
+    expect(
+      responses
+        .filter((response) => response.status !== 200)
+        .every((response) => [400, 409].includes(response.status)),
+    ).toBe(true);
+    expect(await Order.countDocuments()).toBe(1);
+    expect((await Coupon.findById(coupon._id)).reservedCount).toBe(1);
+    expect((await Coupon.findById(coupon._id)).redeemedCount).toBe(0);
   });
 });
